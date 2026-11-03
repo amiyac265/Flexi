@@ -1,5 +1,9 @@
 # Fitness app backend implementation plan
 
+> **Implementation update — November 2, 2026:** This repo is a standalone download from Figma Make. The user selected Supabase Postgres/Auth. The actual export uses **Next.js + React + Tailwind**, not Vite. The current implementation and setup instructions in [docs/backend-api.md](docs/backend-api.md), [docs/backend-setup.md](docs/backend-setup.md), and [docs/database-schema.md](docs/database-schema.md) supersede conflicting details below. The October proposal is preserved as future design context; it is not a list of implemented tables/features.
+
+Current MVP: signup/login through Supabase Auth; completed workout logs; derived XP, daily/weekly streaks and levels; simple calendar CRUD; preset characters; level-unlocked cosmetics; editorial news/tutorials. There are 18 Next.js API handlers and seven SQL app tables. No Supabase project has yet been provisioned or connected. Social, reminders, active workout sessions, detailed set tracking, automatic scheduling, battle passes, and currency are deferred.
+
 Prepared October 28, 2026. Status: proposed implementation contract, not an implemented backend.
 
 ## 1. Recommendation and how to use this package

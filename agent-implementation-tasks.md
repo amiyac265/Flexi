@@ -1,5 +1,9 @@
 # Agent implementation tasks
 
+> **Implementation update — November 2, 2026:** This repo is a standalone download from Figma Make. The user selected Supabase Postgres/Auth. The actual export uses **Next.js + React + Tailwind**, not Vite. The current implementation and setup instructions in [docs/backend-api.md](docs/backend-api.md), [docs/backend-setup.md](docs/backend-setup.md), and [docs/database-schema.md](docs/database-schema.md) supersede conflicting details below. The October proposal is preserved as future design context; it is not a list of implemented tables/features.
+
+Current MVP: signup/login through Supabase Auth; completed workout logs; derived XP, daily/weekly streaks and levels; simple calendar CRUD; preset characters; level-unlocked cosmetics; editorial news/tutorials. There are 18 Next.js API handlers and seven SQL app tables. No Supabase project has yet been provisioned or connected. Social, reminders, active workout sessions, detailed set tracking, automatic scheduling, battle passes, and currency are deferred.
+
 Use with [backend-plan.md](backend-plan.md) and [database-schema.md](database-schema.md). Implement P0 first, then P0b only when that milestone is in scope. Later phases are not part of the initial implementation. This document specifies work to do; no backend or tests have been run against an application repository yet.
 
 ## Working rules

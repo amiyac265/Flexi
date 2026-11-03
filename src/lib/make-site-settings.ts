@@ -1,4 +1,5 @@
-import rawSiteSettings from '../../.figma/make/site.json'
+// Standalone site settings; no connection to Figma Make is required.
+const rawSiteSettings = { title: 'Flexi', language: 'en' }
 
 export type MakeSiteSettings = {
   title?: string

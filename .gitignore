@@ -1,0 +1,12 @@
+node_modules/
+.next/
+coverage/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.DS_Store
+
+supabase/.temp/
+supabase/.branches/
+.env.smoke

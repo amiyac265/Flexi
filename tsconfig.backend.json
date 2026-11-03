@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/backend/**/*.ts",
+    "src/lib/supabase/**/*.ts",
+    "src/lib/flexi-api.ts",
+    "tests/backend/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
