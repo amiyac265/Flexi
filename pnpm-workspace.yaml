@@ -11,6 +11,8 @@ supportedArchitectures:
     - glibc
 
 allowBuilds:
+  # Swagger UI's optional installation analytics do not need to run.
+  '@scarf/scarf': false
   sharp: true
   esbuild: true
   unrs-resolver: true
