@@ -19,3 +19,5 @@ pnpm build
 ```
 
 The backend supports personal workouts/progress, calendar, characters, editorial content, and level-unlocked cosmetics. The exported frontend's personal demo counters still need wiring to `src/lib/flexi-api.ts`. Social interactions and battle passes are deferred. No hosted database has been provisioned by this repository alone.
+
+Interactive API testing: start the app and open **http://localhost:3000/api-docs**. Raw OpenAPI: **http://localhost:3000/api/openapi**. Sign in with a confirmed Supabase test account on the docs page; no app frontend integration is needed.

@@ -142,6 +142,9 @@ endpoint('shop/:id/claim', 'POST', async (_req, { db }, id) => {
   return { inventory: inventoryDTO(result.inventory), replayed: result.replayed }
 })
 
+// Public route metadata lets contract tests detect missing or stale OpenAPI operations.
+export const apiOperations = routes.map(({ path, method }) => ({ path, method }))
+
 /** Native Request/Response boundary, shared by Next.js and HTTP contract tests. */
 export async function handleAPI(req: Request, segments: string[], resolve: ResolveContext = authenticate): Promise<Response> {
   const headers = { 'Cache-Control': 'private, no-store', 'Vary': 'Authorization' }

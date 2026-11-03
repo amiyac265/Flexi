@@ -1,5 +1,17 @@
 # Run Flexi independently of Figma
 
+## Interactive Swagger docs
+
+Start the app with `corepack pnpm dev`, then open **http://localhost:3000/api-docs**. The OpenAPI JSON is available at **http://localhost:3000/api/openapi** for importing into Postman or Insomnia.
+
+1. Apply the Supabase migration and configure `.env.local` as described in the setup guide.
+2. In Supabase **Authentication → Users**, create a dedicated test user with a confirmed email.
+3. Sign in with that account at the top of `/api-docs`. The page automatically authorizes Swagger with the account's access token. Alternatively, click **Authorize** and paste an existing Supabase access token without the `Bearer` prefix.
+4. Expand **GET /profile** or **GET /train**, click **Try it out**, then **Execute**.
+5. To test a write, use **POST /workouts**. Choose a new `requestId` for each intentional workout; reuse the same ID and payload to test retry handling. Copy returned IDs into GET/DELETE operations.
+
+All 18 endpoints include request/response schemas. Requests affect the configured database: use a test account. Swagger's login session is memory-only, separate from the app's persisted login, and expires on reload. Passwords/tokens are not sent to a third-party Swagger validator; UI assets are served by this app. The docs are public, while the API remains authenticated and protected by the same database policies. This adds a developer testing page, not app onboarding.
+
 Updated November 2, 2026. This is a downloaded Next.js/React/Tailwind app. Supabase hosts Postgres and Auth; Next.js runs the frontend and `/api/flexi/*` routes. No Figma account, runtime, database, or environment variables are required.
 
 The repository contains code and a migration, not a provisioned hosted database. No Supabase project has been connected or deployed by this implementation.
