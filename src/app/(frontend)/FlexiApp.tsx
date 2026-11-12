@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
+import ShopTab from './ShopTab'
 
 const avatars = [
   { name: 'Pip', animal: 'Bunny', key: 'bunny', trait: 'Quick starter' },
@@ -19,10 +20,11 @@ export type LeaderboardPlayer = {
   avatar: 'bunny' | 'panda' | 'turtle' | 'deer'
 }
 
-type IconName = 'home' | 'trophy' | 'user' | 'plus' | 'bolt' | 'flame'
+type IconName = 'home' | 'trophy' | 'user' | 'plus' | 'bolt' | 'flame' | 'shop'
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    shop: <><path d="M5 8h14l2 13H3L5 8Z" /><path d="M8 8V6a4 4 0 0 1 8 0v2" /></>,
     home: <><path d="m3 11 9-8 9 8" /><path d="M5 10v10h14V10M9 20v-6h6v6" /></>,
     trophy: <path d="M8 4h8v5a4 4 0 0 1-8 0V4Zm-3 1h3v5H7a2 2 0 0 1-2-2V5Zm11 0h3v3a2 2 0 0 1-2 2h-1M12 13v5m-4 2h8" />,
     user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
@@ -39,7 +41,7 @@ function AvatarArt({ avatar, evolved = false }: { avatar: string; evolved?: bool
 
 export default function FlexiApp({ players }: { players: LeaderboardPlayer[] }) {
   const [avatarIndex] = useState(0)
-  const [tab, setTab] = useState<'home' | 'leaderboard' | 'profile'>('home')
+  const [tab, setTab] = useState<'home' | 'leaderboard' | 'profile' | 'shop'>('home')
   const [xp, setXp] = useState(68)
   const [level, setLevel] = useState(4)
   const [workouts, setWorkouts] = useState(12)
@@ -77,12 +79,13 @@ export default function FlexiApp({ players }: { players: LeaderboardPlayer[] }) 
     <header className="topbar"><Brand /><button className="mini-profile" onClick={() => setTab('profile')}><AvatarArt avatar={avatar.key} /></button></header>
     {rankMessage && <div className="rank-toast"><Icon name="trophy" />{rankMessage}</div>}
     <main className="tab-content">
+      <div hidden={tab !== 'shop'}><ShopTab avatar={avatar.key} evolved={evolved} /></div>
       {tab === 'home' && <HomeTab avatar={avatar} evolved={evolved} level={level} xp={xp} workouts={workouts} points={points} feedback={feedback} rank={rank} onWorkout={addWorkout} />}
       {tab === 'leaderboard' && <LeaderboardTab ranked={ranked} />}
       {tab === 'profile' && <ProfileTab avatar={avatar} level={level} xp={xp} workouts={workouts} points={points} rank={rank} />}
     </main>
     <nav className="bottom-tabs" aria-label="Primary navigation">
-      {(['home', 'leaderboard', 'profile'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><Icon name={item === 'leaderboard' ? 'trophy' : item === 'profile' ? 'user' : 'home'} /><span>{item === 'home' ? 'Train' : item[0].toUpperCase() + item.slice(1)}</span></button>)}
+      {(['home', 'leaderboard', 'profile', 'shop'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><Icon name={item === 'leaderboard' ? 'trophy' : item === 'profile' ? 'user' : item === 'shop' ? 'shop' : 'home'} /><span>{item === 'home' ? 'Train' : item[0].toUpperCase() + item.slice(1)}</span></button>)}
     </nav>
   </div>
 }
