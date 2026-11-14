@@ -5,7 +5,7 @@ import { authenticate, handleAPI, readBody, type APIContext } from '../../src/ba
 import { databaseError } from '../../src/backend/data.ts'
 import type { Database, ProfileRow } from '../../src/backend/database.types.ts'
 const id = '00000000-0000-4000-8000-000000000001'
-const profile: ProfileRow = { id, display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, created_at: '2026-11-02T12:00:00Z' }
+const profile: ProfileRow = { id, display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, goals: [], experience_level: 'beginner', preferred_time: 'flexible', calendar_provider: 'none', onboarding_completed: false, equipped_cosmetics: {}, created_at: '2026-11-02T12:00:00Z' }
 const workout = { id, owner: id, request_id: 'request-1234', title: 'Gym', duration_minutes: 30, notes: '', exercises: [], status: 'completed', local_date: '2026-11-02', completed_at: '2026-11-02T12:00:00Z', voided_at: null }
 function request(path: string, method = 'GET', body?: unknown) {
   return new Request(`http://localhost/api/flexi/${path}`, { method, ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
@@ -16,8 +16,8 @@ function context(fetcher: typeof fetch, p = profile): APIContext {
 const neverFetch: typeof fetch = async () => { throw new Error('Unexpected database request') }
 const run = (req: Request, ctx = context(neverFetch)) => handleAPI(req, new URL(req.url).pathname.split('/').slice(3), async () => ctx)
 
-test('all 18 routes require a bearer token; cookies alone are not authentication', async () => {
-  const routes = [['profile','GET'],['profile','PATCH'],['progress','GET'],['train','GET'],['content','GET'],['workouts','GET'],[`workouts/${id}`,'GET'],['workouts','POST'],[`workouts/${id}`,'DELETE'],['calendar','GET'],['calendar','POST'],[`calendar/${id}`,'PATCH'],[`calendar/${id}`,'DELETE'],['character','GET'],['character','PATCH'],['shop','GET'],['inventory','GET'],[`shop/${id}/claim`,'POST']]
+test('all routes require a bearer token; cookies alone are not authentication', async () => {
+  const routes = [['onboarding','POST'],['profile','GET'],['profile','PATCH'],['progress','GET'],['train','GET'],['content','GET'],['workouts','GET'],[`workouts/${id}`,'GET'],['workouts','POST'],[`workouts/${id}`,'DELETE'],['calendar','GET'],['calendar','POST'],[`calendar/${id}`,'PATCH'],[`calendar/${id}`,'DELETE'],['character','GET'],['character','PATCH'],['shop','GET'],['inventory','GET'],[`shop/${id}/claim`,'POST']]
   for (const [path, method] of routes) {
     const req = request(path, method)
     req.headers.set('Cookie', 'fake-session=admin')
@@ -30,7 +30,7 @@ test('profile returns only public profile fields and responses vary by Authoriza
   const response = await run(request('profile'))
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('vary'), 'Authorization')
-  assert.deepEqual(Object.keys((await response.json()).data).sort(), ['id','displayName','avatar','timezone','weeklyGoal','createdAt'].sort())
+  assert.deepEqual(Object.keys((await response.json()).data).sort(), ['id','displayName','avatar','timezone','weeklyGoal','createdAt','goals','experienceLevel','preferredTime','calendarProvider','onboardingCompleted'].sort())
 })
 test('router returns 404/405 and allowed verbs without executing a mutation', async () => {
   assert.equal((await run(request('missing'))).status, 404)
@@ -127,4 +127,62 @@ test('authentication verifies the bearer token with Supabase before reading a pr
   await assert.rejects(authenticate(new Request('http://localhost', { headers: { Authorization: 'Bearer rejected-token' } })), /session expired/)
   assert.equal(calls.length, 1)
   assert.match(calls[0], /auth\/v1\/user$/)
+})
+
+test('onboarding accepts preferences only and delegates ownership to SQL', async () => {
+  const body = { goals: ['stay-consistent'], experienceLevel: 'beginner', weeklyGoal: 2, preferredTime: 'morning', calendarProvider: 'google' }
+  const ctx = context(async (url, init) => {
+    assert.match(String(url), /rpc\/flexi_save_onboarding$/)
+    assert.deepEqual(JSON.parse(String(init?.body)).p_input, body)
+    return Response.json({ ...profile, goals: body.goals, weekly_goal: 2, onboarding_completed: true })
+  })
+  const response = await run(request('onboarding', 'POST', body), ctx)
+  assert.equal(response.status, 200); assert.equal((await response.json()).data.onboardingCompleted, true)
+  assert.equal((await run(request('onboarding', 'POST', { ...body, owner: id }))).status, 400)
+})
+test('detailed workouts and retryable calendar creation preserve contract fields and hide internal payloads', async () => {
+  const details = { activity: 'strength', intensity: 'intense', focusArea: 'legs', performedAt: '2025-01-02T02:00:00Z' }
+  const ctx = context(async (url, init) => {
+    const body = JSON.parse(String(init?.body)).p_input
+    if (String(url).includes('flexi_log_workout')) {
+      assert.equal(body.performedAt, '2025-01-02T02:00:00.000Z'); assert.equal(body.focusArea, 'legs')
+      return Response.json({ workout: { ...workout, activity: body.activity, intensity: body.intensity, focus_area: body.focusArea, performed_at: body.performedAt }, replayed: false })
+    }
+    assert.equal(body.requestId, 'plan-retry-123'); assert.equal(body.workoutType, 'mobility')
+    return Response.json({ id, owner: id, title: body.title, starts_at: body.startsAt, ends_at: body.endsAt, timezone: body.timezone, notes: '', status: 'planned', created_at: workout.completed_at, workout_type: body.workoutType, request_id: body.requestId, creation_input: { private: true } })
+  })
+  const result = await run(request('workouts', 'POST', { requestId: 'request-details', title: 'Gym', durationMinutes: 30, ...details }), ctx)
+  assert.equal((await result.json()).data.workout.focusArea, 'legs')
+  const plan = await run(request('calendar', 'POST', { requestId: 'plan-retry-123', title: 'Plan', startsAt: '2026-11-15T14:00:00Z', endsAt: '2026-11-15T15:00:00Z', timezone: 'UTC', workoutType: 'mobility' }), ctx)
+  const data = (await plan.json()).data
+  assert.equal(data.requestId, 'plan-retry-123'); assert.equal(data.creation_input, undefined)
+  assert.equal((await run(request(`calendar/${id}`, 'PATCH', { requestId: 'changed-key' }))).status, 400)
+})
+test('equipment API rejects unknown slots, malformed IDs and mixed legacy inputs', async () => {
+  for (const input of [{ equipped: { admin: id } }, { equipped: null }, { equipped: { top: 'bad' } }, { equipped: {}, equippedCosmeticId: null }]) {
+    assert.equal((await run(request('character', 'PATCH', input))).status, 400)
+  }
+  let mutated = false
+  const ctx = context(async (url, init) => {
+    if (String(url).includes('flexi_update_profile')) {
+      assert.deepEqual(JSON.parse(String(init?.body)).p_input, { equipped: { top: null } }); mutated = true
+      return Response.json(profile)
+    }
+    return Response.json([])
+  })
+  const response = await run(request('character', 'PATCH', { equipped: { top: null } }), ctx)
+  assert.equal(response.status, 200); assert.equal(mutated, true)
+  assert.deepEqual((await response.json()).data.equippedCosmetics, [])
+})
+
+test('a project missing the integration migration returns a setup error before rendering private data', async (t) => {
+  const originalURL = process.env.NEXT_PUBLIC_SUPABASE_URL, originalKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://supabase.invalid'
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'test-only-key'
+  t.after(() => {
+    if (originalURL === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = originalURL
+    if (originalKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = originalKey
+  })
+  t.mock.method(globalThis, 'fetch', async (url: string | URL) => String(url).includes('/auth/v1/user') ? Response.json({ id }) : Response.json({ ...profile, onboarding_completed: undefined }))
+  await assert.rejects(authenticate(new Request('http://localhost', { headers: { Authorization: 'Bearer test-token' } })), /latest Flexi database migrations/)
 })
