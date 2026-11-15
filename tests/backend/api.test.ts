@@ -141,12 +141,13 @@ test('onboarding accepts preferences only and delegates ownership to SQL', async
   assert.equal((await run(request('onboarding', 'POST', { ...body, owner: id }))).status, 400)
 })
 test('detailed workouts and retryable calendar creation preserve contract fields and hide internal payloads', async () => {
-  const details = { activity: 'strength', intensity: 'intense', focusArea: 'legs', performedAt: '2025-01-02T02:00:00Z' }
+  const details = { activity: 'rowing', intensity: 'intense', focusArea: 'legs', distance: 4.25, distanceUnit: 'km', performedAt: '2025-01-02T02:00:00Z' }
   const ctx = context(async (url, init) => {
     const body = JSON.parse(String(init?.body)).p_input
     if (String(url).includes('flexi_log_workout')) {
       assert.equal(body.performedAt, '2025-01-02T02:00:00.000Z'); assert.equal(body.focusArea, 'legs')
-      return Response.json({ workout: { ...workout, activity: body.activity, intensity: body.intensity, focus_area: body.focusArea, performed_at: body.performedAt }, replayed: false })
+      assert.equal(body.distance, 4.25); assert.equal(body.distanceUnit, 'km')
+      return Response.json({ workout: { ...workout, activity: body.activity, intensity: body.intensity, focus_area: body.focusArea, performed_at: body.performedAt, distance: body.distance, distance_unit: body.distanceUnit }, replayed: false })
     }
     assert.equal(body.requestId, 'plan-retry-123'); assert.equal(body.workoutType, 'mobility')
     return Response.json({ id, owner: id, title: body.title, starts_at: body.startsAt, ends_at: body.endsAt, timezone: body.timezone, notes: '', status: 'planned', created_at: workout.completed_at, workout_type: body.workoutType, request_id: body.requestId, creation_input: { private: true } })
@@ -157,6 +158,40 @@ test('detailed workouts and retryable calendar creation preserve contract fields
   const data = (await plan.json()).data
   assert.equal(data.requestId, 'plan-retry-123'); assert.equal(data.creation_input, undefined)
   assert.equal((await run(request(`calendar/${id}`, 'PATCH', { requestId: 'changed-key' }))).status, 400)
+})
+test('sport workout subtype is validated and returned', async () => {
+  const ctx = context(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)).p_input
+    assert.equal(body.activity, 'sports'); assert.equal(body.sport, 'volleyball')
+    return Response.json({ workout: { ...workout, activity: 'sports', sport_type: body.sport }, replayed: false })
+  })
+  const response = await run(request('workouts', 'POST', {
+    requestId: 'sport-request-123', title: 'Volleyball', durationMinutes: 60,
+    activity: 'sports', sport: 'volleyball',
+  }), ctx)
+  assert.equal((await response.json()).data.workout.sport, 'volleyball')
+})
+test('strength workout preserves muscle groups and individual sets', async () => {
+  const exercises = [
+    {
+      name: 'Bench press',
+      muscleGroup: 'chest',
+      setDetails: [
+        { reps: 10, weightKg: 40 },
+        { reps: 8, weightKg: 45 },
+      ],
+    },
+  ]
+  const ctx = context(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)).p_input
+    assert.deepEqual(body.exercises, exercises)
+    return Response.json({ workout: { ...workout, activity: 'strength', exercises }, replayed: false })
+  })
+  const response = await run(request('workouts', 'POST', {
+    requestId: 'strength-request-123', title: 'Bench press', durationMinutes: 45,
+    activity: 'strength', exercises,
+  }), ctx)
+  assert.deepEqual((await response.json()).data.workout.exercises, exercises)
 })
 test('equipment API rejects unknown slots, malformed IDs and mixed legacy inputs', async () => {
   for (const input of [{ equipped: { admin: id } }, { equipped: null }, { equipped: { top: 'bad' } }, { equipped: {}, equippedCosmeticId: null }]) {

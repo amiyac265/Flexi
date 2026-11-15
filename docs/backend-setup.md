@@ -109,7 +109,7 @@ After reviewing and applying the new migration on a development project:
 
 1. Sign up, confirm the email, sign in, complete onboarding, and reload. Verify the saved name, goal, preferences and timezone.
 2. Request a password reset and follow the email link back to the app. Set a new password and verify it works after logout. This validates the project-specific email service and redirect allowlist, which local fixtures cannot verify.
-3. Log a workout with activity, focus, intensity, notes and a past time. Reload; verify history and 100 XP per distinct local day. Log another on that day; verify no additional XP. Remove a workout and verify recalculated totals.
+3. Log a strength workout with multiple exercises and per-set reps/weight, intensity, notes and a past time. Then log cardio with an activity, duration, distance/unit, and no intensity. Log a sport with its type and duration. Reload; verify all histories and 100 XP per distinct local day. Log another workout on that day; verify no additional XP. Remove a workout and verify recalculated totals.
 4. Schedule a workout, navigate months, reload, mark the plan complete/cancel it, and explicitly export a saved event to Google Calendar. Calendar status alone must not award XP.
 5. Claim eligible cosmetics, preview/equip different slots, switch avatars and reload. Confirm locked and unowned items cannot be equipped; archived items remain owned without rendering.
 6. Sign out, sign into a second test account, and verify that history, equipment, calendar and retry drafts do not leak across accounts.

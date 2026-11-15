@@ -72,10 +72,33 @@ test('new form validators reject forged or malformed fields', () => {
     performedAt: '2025-01-01T23:00:00-05:00',
   }
   assert.equal(workoutInput(workout).performedAt, '2025-01-02T04:00:00.000Z')
+  assert.deepEqual(
+    workoutInput({
+      ...workout,
+      activity: 'rowing',
+      distance: 5.1254,
+      distanceUnit: 'km',
+    }),
+    {
+      ...workout,
+      activity: 'rowing',
+      performedAt: '2025-01-02T04:00:00.000Z',
+      exercises: [],
+      distance: 5.125,
+      distanceUnit: 'km',
+    },
+  )
+  assert.equal(
+    workoutInput({ ...workout, activity: 'sports', sport: 'tennis' }).sport,
+    'tennis',
+  )
   for (const extra of [
     { activity: 'admin' },
     { intensity: null },
     { focusArea: 'head' },
+    { distance: 5 },
+    { distance: 5, distanceUnit: 'laps' },
+    { sport: 'quidditch' },
     { performedAt: '2999-01-01T00:00:00Z' },
     { owner: 'other' },
   ])

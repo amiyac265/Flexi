@@ -388,12 +388,24 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
   await noOverflow(page)
   app.failWorkout = true
   await page.getByRole('button', { name: 'Log a workout' }).click()
+  await expect(page.getByRole('heading', { name: 'What did you do?' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Cardio/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Sport/ })).toBeVisible()
+  await page.getByRole('button', { name: /Weight/ }).click()
+  await expect(page.getByLabel('Workout title')).toHaveValue(
+    /^(Morning|Afternoon|Evening) lift$/,
+  )
+  await page.getByLabel('Workout title').fill('Leg day')
+  await page.getByLabel('Exercise 1 muscle group').selectOption('legs')
+  await page.getByLabel('Exercise 1 exercise').selectOption('Squat')
+  await page.getByLabel('Exercise 1 set 1 weight in pounds').fill('80')
+  await page.getByLabel('Exercise 1 set 1 reps').fill('8')
   await page.getByLabel('Notes optional').fill('Private workout note')
-  await page.getByLabel('Area trained').selectOption('legs')
   await page.getByRole('button', { name: 'Save workout', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Retry saved workout' })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'Log a workout' }).click()
+  await page.getByRole('button', { name: /Weight/ }).click()
   await expect(page.getByLabel('Notes optional')).toHaveValue('Private workout note')
   await page.getByRole('button', { name: 'Retry saved workout' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -401,6 +413,18 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
   const logs = app.requests.filter((r) => r.path === 'workouts' && r.method === 'POST')
   expect(logs).toHaveLength(2)
   expect(logs[0].body).toEqual(logs[1].body)
+  expect(logs[0].body).toMatchObject({
+    activity: 'strength',
+    focusArea: 'legs',
+    exercises: [
+      {
+        name: 'Squat',
+        muscleGroup: 'legs',
+        setDetails: [{ reps: 8, weightKg: 36.287 }],
+      },
+    ],
+  })
+  expect(logs[0].body).not.toHaveProperty('intensity')
   await expect(page.getByText('100 / 500 XP')).toBeVisible()
   await page.screenshot({ path: info.outputPath('train.png'), fullPage: true })
   await page.getByRole('button', { name: 'Profile', exact: true }).click()
@@ -452,7 +476,7 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
   await expect(page.locator('.closet-group .equipped')).toHaveCount(2)
   await noOverflow(page)
   await page.screenshot({ path: info.outputPath('profile.png'), fullPage: true })
-  await page.getByRole('button', { name: 'Remove Strength training' }).click()
+  await page.getByRole('button', { name: 'Remove Leg day' }).click()
   await page.getByRole('button', { name: 'Confirm remove' }).click()
   await expect(page.getByText('Private workout note', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: /Log out/ }).click()
@@ -467,6 +491,112 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
       Object.keys(sessionStorage).filter((key) => key.startsWith('flexi:')),
     ),
   ).toEqual([])
+})
+
+test('strength logging builds, adds and removes per-set exercises', async ({ page }) => {
+  await setup(page)
+  await page.goto('/')
+  await login(page)
+  await page.getByRole('button', { name: 'Log a workout' }).click()
+  await page.getByRole('button', { name: /Weight/ }).click()
+  await expect(page.getByLabel('Workout title')).toBeVisible()
+  await expect(page.getByLabel('Exercise 1 exercise')).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Delete exercise 1' })).toBeDisabled()
+  await page.getByLabel('Exercise 1 muscle group').selectOption('chest')
+  await expect(page.getByLabel('Exercise 1 exercise').locator('option')).toHaveText([
+    'Select exercise',
+    'Bench press',
+    'Incline dumbbell press',
+    'Chest fly',
+    'Push-up',
+  ])
+  await page.getByLabel('Exercise 1 exercise').selectOption('Bench press')
+  await page.getByLabel('Exercise 1 number of sets').fill('2')
+  await expect(page.getByLabel(/Exercise 1 set .* weight in pounds/)).toHaveCount(2)
+  await expect(page.getByLabel(/Exercise 1 set .* reps/)).toHaveCount(2)
+  await page.getByRole('button', { name: 'Add another exercise' }).click()
+  await expect(page.getByLabel('Exercise 2 muscle group')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Delete exercise 1' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Delete exercise 2' }).click()
+  await expect(page.getByLabel('Exercise 2 muscle group')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Delete exercise 1' })).toBeDisabled()
+})
+
+test('cardio logging collects a cardio activity, duration and distance', async ({ page }) => {
+  const app = await setup(page)
+  await page.goto('/')
+  await login(page)
+  await page.getByRole('button', { name: 'Log a workout' }).click()
+  await page.getByRole('button', { name: /Cardio/ }).click()
+  await expect(page.getByLabel('Workout title')).toBeVisible()
+  await expect(page.getByLabel('Workout title')).toHaveValue(
+    /^(Morning|Afternoon|Evening) cardio$/,
+  )
+  await expect(page.getByLabel('Activity').locator('option')).toHaveText([
+    'Walking',
+    'Running',
+    'Cycling',
+    'Rowing',
+    'Swimming',
+    'Elliptical',
+    'Stair climber',
+    'Hiking',
+    'Jump rope',
+  ])
+  await page.getByLabel('Activity').selectOption('swimming')
+  await page.getByLabel('Workout title').fill('Pool workout')
+  await page.getByLabel('Duration').fill('45')
+  await page.getByLabel('Distance').fill('1500')
+  await page.getByLabel('Distance unit').selectOption('m')
+  await page.getByRole('button', { name: 'Save workout', exact: true }).click()
+  const request = app.requests.find((item) => item.path === 'workouts' && item.method === 'POST')
+  expect(request?.body).toMatchObject({
+    title: 'Pool workout',
+    activity: 'swimming',
+    durationMinutes: 45,
+    distance: 1500,
+    distanceUnit: 'm',
+  })
+  expect(request?.body).not.toHaveProperty('intensity')
+  expect(request?.body).not.toHaveProperty('focusArea')
+})
+
+test('sport logging collects a sport, duration and optional intensity', async ({ page }) => {
+  const app = await setup(page)
+  await page.goto('/')
+  await login(page)
+  await page.getByRole('button', { name: 'Log a workout' }).click()
+  await page.getByRole('button', { name: /Sport/ }).click()
+  await expect(page.getByLabel('Workout title')).toBeVisible()
+  await expect(page.getByLabel('Workout title')).toHaveValue(
+    /^(Morning|Afternoon|Evening) game$/,
+  )
+  await expect(page.getByLabel('Sport').locator('option')).toHaveText([
+    'Basketball',
+    'Soccer',
+    'Football',
+    'Tennis',
+    'Volleyball',
+    'Baseball / softball',
+    'Hockey',
+    'Golf',
+    'Pickleball',
+    'Other',
+  ])
+  await page.getByLabel('Sport').selectOption('tennis')
+  await page.getByLabel('Workout title').fill('Tennis practice')
+  await page.getByLabel('Duration').fill('75')
+  await page.getByRole('button', { name: 'Save workout', exact: true }).click()
+  const request = app.requests.find((item) => item.path === 'workouts' && item.method === 'POST')
+  expect(request?.body).toMatchObject({
+    title: 'Tennis practice',
+    activity: 'sports',
+    sport: 'tennis',
+    durationMinutes: 75,
+  })
+  expect(request?.body).not.toHaveProperty('intensity')
+  expect(request?.body).not.toHaveProperty('focusArea')
+  expect(request?.body).not.toHaveProperty('distance')
 })
 
 test('load failures have a retry and password reset recovery is handled', async ({

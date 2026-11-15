@@ -163,14 +163,39 @@ select expect_error('select flexi_log_workout(''{"requestId":"bad-detail-001","t
 select expect_error('select flexi_log_workout(''{"requestId":"bad-detail-001","title":"Bad","durationMinutes":30,"performedAt":"2999-01-01T00:00:00Z"}'')','PT400');
 select expect_error('select flexi_log_workout(''{"requestId":"bad-detail-001","title":"Bad","durationMinutes":30,"performedAt":"2020-01-01T00:00:00"}'')','PT400');
 do $$ declare first jsonb; retry jsonb; begin
-  first := flexi_log_workout('{"requestId":"detail-1234","title":"Leg day","durationMinutes":40,"activity":"strength","intensity":"intense","focusArea":"legs","performedAt":"2025-01-02T02:00:00Z"}');
-  retry := flexi_log_workout('{"requestId":"detail-1234","title":"Leg day","durationMinutes":40,"activity":"strength","intensity":"intense","focusArea":"legs","performedAt":"2025-01-01T21:00:00-05:00"}');
+  first := flexi_log_workout('{"requestId":"detail-1234","title":"Leg day","durationMinutes":40,"activity":"strength","intensity":"intense","focusArea":"legs","performedAt":"2025-01-02T02:00:00Z","exercises":[{"name":"Squat","muscleGroup":"legs","setDetails":[{"reps":8,"weightKg":80}]}]}');
+  retry := flexi_log_workout('{"requestId":"detail-1234","title":"Leg day","durationMinutes":40,"activity":"strength","intensity":"intense","focusArea":"legs","performedAt":"2025-01-01T21:00:00-05:00","exercises":[{"name":"Squat","muscleGroup":"legs","setDetails":[{"reps":8,"weightKg":80}]}]}');
   assert retry->>'replayed'='true'; assert first->'workout'->>'id'=retry->'workout'->>'id';
   assert first->'workout'->>'local_date'='2025-01-01'; assert first->'workout'->>'focus_area'='legs';
+  assert first->'workout'->'exercises'->0->>'muscleGroup'='legs';
   assert (first->'workout'->>'completed_at')::timestamptz > (first->'workout'->>'performed_at')::timestamptz;
 end $$;
-select expect_error('select flexi_log_workout(''{"requestId":"detail-1234","title":"Leg day","durationMinutes":40,"activity":"strength","intensity":"light","focusArea":"legs","performedAt":"2025-01-02T02:00:00Z"}'')','PT409');
+select expect_error('select flexi_log_workout(''{"requestId":"detail-1234","title":"Leg day","durationMinutes":40,"activity":"strength","intensity":"light","focusArea":"legs","performedAt":"2025-01-02T02:00:00Z","exercises":[{"name":"Squat","muscleGroup":"legs","setDetails":[{"reps":8,"weightKg":80}]}]}'')','PT409');
 select 'PASS: workout details persist; timezone-derived day, immutable receipt time, canonical date retries and changed-payload conflicts.';
+select expect_error('select flexi_log_workout(''{"requestId":"strength-bad-001","title":"Strength","durationMinutes":30,"activity":"strength"}'')','PT400');
+select expect_error('select flexi_log_workout(''{"requestId":"strength-bad-002","title":"Squat","durationMinutes":30,"activity":"strength","exercises":[{"name":"Squat","muscleGroup":"legs","setDetails":[{"reps":0,"weightKg":80}]}]}'')','PT400');
+select expect_error('select flexi_log_workout(''{"requestId":"strength-bad-003","title":"Squat","durationMinutes":30,"activity":"strength","exercises":[{"name":"Squat","sets":3,"reps":8,"weightKg":80}]}'')','PT400');
+select 'PASS: strength workouts require muscle groups and validated per-set reps and weight.';
+select expect_error('select flexi_log_workout(''{"requestId":"cardio-bad-001","title":"Run","durationMinutes":30,"activity":"running"}'')','PT400');
+select expect_error('select flexi_log_workout(''{"requestId":"cardio-bad-002","title":"Run","durationMinutes":30,"activity":"running","distance":5}'')','PT400');
+select expect_error('select flexi_log_workout(''{"requestId":"cardio-bad-003","title":"Run","durationMinutes":30,"activity":"running","distance":5,"distanceUnit":"laps"}'')','PT400');
+do $$ declare result jsonb; begin
+  result := flexi_log_workout('{"requestId":"cardio-good-001","title":"Rowing","durationMinutes":30,"activity":"rowing","distance":5.1254,"distanceUnit":"km"}');
+  assert result->'workout'->>'activity'='rowing';
+  assert (result->'workout'->>'distance')::numeric=5.125;
+  assert result->'workout'->>'distance_unit'='km';
+  assert result->'workout'->'intensity'='null'::jsonb;
+end $$;
+select 'PASS: cardio activities require normalized distance and allow omitted intensity.';
+select expect_error('select flexi_log_workout(''{"requestId":"sport-bad-001","title":"Game","durationMinutes":45,"activity":"sports"}'')','PT400');
+select expect_error('select flexi_log_workout(''{"requestId":"sport-bad-002","title":"Game","durationMinutes":45,"activity":"sports","sport":"quidditch"}'')','PT400');
+do $$ declare result jsonb; begin
+  result := flexi_log_workout('{"requestId":"sport-good-001","title":"Volleyball","durationMinutes":60,"activity":"sports","sport":"volleyball"}');
+  assert result->'workout'->>'activity'='sports';
+  assert result->'workout'->>'sport_type'='volleyball';
+  assert result->'workout'->'intensity'='null'::jsonb;
+end $$;
+select 'PASS: sport workouts require a validated sport type and allow omitted intensity.';
 do $$ declare e calendar_events; retry calendar_events; body jsonb := '{"requestId":"plan-retry-123","title":"Plan","startsAt":"2026-11-15T14:00:00Z","endsAt":"2026-11-15T15:00:00Z","timezone":"America/New_York","workoutType":"mobility"}'; begin
   e := flexi_create_calendar(body); retry := flexi_create_calendar(body);
   assert e.id=retry.id and e.workout_type='mobility';

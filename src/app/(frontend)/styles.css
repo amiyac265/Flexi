@@ -100,3 +100,49 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .fit-grown .garment.shoes { transform: translateY(6px); }
 @media (max-width: 850px) { .shop-avatar { height: 360px; } }
 @media (max-width: 520px) { .shop-avatar { height: 330px; } }
+
+.workout-type-modal { width: min(620px, 100%); }
+.workout-type-grid { display: grid; gap: 11px; }
+.workout-type-grid > button { display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 15px; width: 100%; padding: 15px; border: 1px solid #dedcd5; border-radius: 17px; background: #faf9f5; color: var(--ink); text-align: left; cursor: pointer; transition: .2s; }
+.workout-type-grid > button:hover, .workout-type-grid > button:focus-visible { border-color: var(--moss); background: #f1f5e9; outline: none; box-shadow: 0 0 0 2px #4e721d20; transform: translateY(-1px); }
+.workout-type-icon { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 15px; background: #eef2df; color: var(--moss); }
+.workout-type-icon.cardio { background: #def4f1; color: #008f83; }
+.workout-type-icon.sport { background: #eee8f3; color: var(--lavender); }
+.workout-type-icon svg { width: 27px; height: 27px; }
+.workout-type-grid b, .workout-type-grid small { display: block; }
+.workout-type-grid b { font: 800 16px 'Manrope'; }
+.workout-type-grid small { margin-top: 3px; color: #7d767d; font-size: 11px; line-height: 1.35; }
+.workout-type-arrow { color: #9a949a; font-size: 20px; transition: .2s; }
+.workout-type-grid > button:hover .workout-type-arrow, .workout-type-grid > button:focus-visible .workout-type-arrow { color: var(--moss); transform: translateX(2px); }
+.distance-input { display: grid; grid-template-columns: minmax(0, 1fr) 82px; }
+.distance-input input { border-radius: 12px 0 0 12px; }
+.distance-input select { border-left: 0; border-radius: 0 12px 12px 0; background: #f0efe9; font-weight: 800; }
+.strength-modal { width: min(760px, 100%); }
+.strength-builder { display: grid; gap: 14px; margin-bottom: 15px; }
+.strength-exercise { padding: 18px; border: 1px solid #dedcd5; border-radius: 18px; background: #faf9f5; }
+.strength-exercise-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 15px; }
+.remove-exercise { padding: 7px 10px; border: 0; border-radius: 9px; background: #f5e5e2; color: #93443c; font-size: 10px; font-weight: 800; cursor: pointer; }
+.remove-exercise:disabled { opacity: .35; cursor: not-allowed; }
+.strength-choice-row { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin-bottom: 13px; }
+.set-count-field { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; margin-bottom: 13px; }
+.set-count-field > span { color: #4f4950; font-size: 12px; font-weight: 800; }
+.set-stepper { display: grid; grid-template-columns: 38px 58px 38px; overflow: hidden; border: 1px solid #dcdad4; border-radius: 11px; background: #fff; }
+.set-stepper button { border: 0; background: #eef2df; color: var(--moss); font-size: 19px; font-weight: 800; cursor: pointer; }
+.set-stepper button:disabled { color: #aaa; background: #f1f0ec; cursor: not-allowed; }
+.workout-modal .set-stepper input { padding: 9px 4px; border: 0; border-right: 1px solid #dcdad4; border-left: 1px solid #dcdad4; border-radius: 0; background: #fff; text-align: center; font-weight: 800; box-shadow: none; -moz-appearance: textfield; }
+.set-stepper input::-webkit-inner-spin-button, .set-stepper input::-webkit-outer-spin-button { margin: 0; -webkit-appearance: none; }
+.strength-sets { display: grid; gap: 7px; }
+.strength-set-labels, .strength-set { display: grid; grid-template-columns: 38px 1fr 1fr; align-items: center; gap: 9px; }
+.strength-set-labels { color: #8b858b; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.strength-set { padding: 8px; border-radius: 12px; background: #fff; }
+.strength-set b { text-align: center; color: var(--moss); font: 800 13px 'Manrope'; }
+.strength-set input { padding: 10px 11px; }
+.add-exercise { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 13px; border: 1px dashed #aeb99a; border-radius: 14px; background: #f2f5ea; color: var(--moss); font-weight: 800; cursor: pointer; }
+.add-exercise svg { width: 18px; }
+.add-exercise:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 520px) { .strength-exercise { padding: 15px 12px; } .strength-choice-row { grid-template-columns: 1fr; } .strength-set-labels, .strength-set { grid-template-columns: 30px 1fr 1fr; gap: 6px; } }
+.workout-name-field { margin-bottom: 20px; }
+.workout-modal .workout-name-field input { padding: 3px 0 11px; border: 0; border-bottom: 2px solid #dedcd5; border-radius: 0; background: transparent; font: 800 clamp(22px, 4vw, 29px)/1.15 'Manrope'; letter-spacing: -.035em; }
+.workout-modal .workout-name-field input:focus { border-color: var(--moss); box-shadow: none; }
+.workout-modal form > fieldset { display: grid; gap: 21px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.workout-modal form > fieldset > .full-field, .workout-modal form > fieldset > .field-row, .workout-modal form > fieldset > .strength-builder { margin-bottom: 0; }
