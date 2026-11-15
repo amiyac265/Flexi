@@ -100,3 +100,5 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .fit-grown .garment.shoes { transform: translateY(6px); }
 @media (max-width: 850px) { .shop-avatar { height: 360px; } }
 @media (max-width: 520px) { .shop-avatar { height: 330px; } }
+
+button:focus-visible{outline:3px solid var(--aqua);outline-offset:4px}
