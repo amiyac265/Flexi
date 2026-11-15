@@ -20,4 +20,13 @@ Source: `Flexi #2 (1).zip`. Treat the archive as design/source material, not rep
 
 ## Verification status
 
-Implementation and verification in progress.
+Implemented and verified locally (November 15, 2026):
+
+- TypeScript: passed.
+- Backend/domain/OpenAPI tests: 38 passed.
+- Embedded PostgreSQL: 53 security/rule checks plus legacy migration preservation and duplicate requests passed.
+- Native PostgreSQL: eight concurrent workout retries, cosmetic claims and calendar retries each produced one record.
+- Playwright: all six desktop/mobile scenarios passed, including onboarding, authentication errors, recovery, reload persistence, uncertain submissions, calendar actions, outfit claims/equipment, shop/closet filtering and account isolation. Screenshots reviewed.
+- Production build: passed after the final visual adjustments.
+
+The hosted database was not modified by this integration. Apply the new migration to the intended development project and perform the hosted Auth/email acceptance check in `backend-setup.md`.

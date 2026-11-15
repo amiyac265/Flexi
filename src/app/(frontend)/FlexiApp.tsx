@@ -1,19 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react'
-import {
-  flexiAPI,
-  FlexiAPIError,
-  type ShopItem as APIShopItem,
-  type Train,
-  type createFlexiAPI,
-} from '@/lib/flexi-api'
+import { flexiAPI, FlexiAPIError, type Train, type createFlexiAPI } from '@/lib/flexi-api'
 import {
   calendarInput,
   dateKey,
   workoutInput,
   type CalendarInput,
-  type EquipmentSlot,
   type OnboardingInput,
   type Progress,
 } from '@/backend/domain'
@@ -30,6 +23,8 @@ import {
   workoutInputFromForm,
   type WorkoutType,
 } from './WorkoutLogging'
+import ShopTab from './ShopTab'
+import { AvatarArt, FittedAvatar, type ShopItem, type Equipped } from './FlexiVisuals'
 
 const avatars = [
   { name: 'Pip', animal: 'Bunny', key: 'bunny', trait: 'Quick starter' },
@@ -46,153 +41,6 @@ export type LeaderboardPlayer = {
   workouts: number
   streak: number
   avatar: 'bunny' | 'panda' | 'turtle' | 'deer'
-}
-
-type ShopItem = Omit<APIShopItem, 'slot'> & { slot: EquipmentSlot }
-
-function AvatarArt({
-  avatar,
-  evolved = false,
-  focus,
-}: {
-  avatar: string
-  evolved?: boolean
-  focus?: 'arms' | 'chest' | 'legs' | null
-}) {
-  const hasFocusArt = focus && (avatar !== 'turtle' || focus === 'arms')
-  const src = hasFocusArt
-    ? `/avatars/focus/${avatar}-${focus}.png`
-    : `/avatars/${avatar}-${evolved ? 'evolved' : 'starter'}.png`
-  return (
-    <img
-      className="avatar-img"
-      src={src}
-      alt={`${focus ? `${focus}-focused` : evolved ? 'Evolved' : 'Starter'} ${avatar} avatar`}
-    />
-  )
-}
-
-type Equipped = Partial<Record<ShopItem['slot'], string>>
-
-function FittedAvatar({
-  avatar,
-  evolved = false,
-  focus,
-  items,
-  equipped,
-  preview,
-}: {
-  avatar: string
-  evolved?: boolean
-  focus?: 'arms' | 'chest' | 'legs' | null
-  items: ShopItem[]
-  equipped: Equipped
-  preview?: ShopItem | null
-}) {
-  const active = Object.values(equipped)
-    .map((id) => items.find((item) => item.id === id))
-    .filter((item): item is ShopItem => Boolean(item))
-  const layers = preview
-    ? [...active.filter((item) => item.slot !== preview.slot), preview]
-    : active
-  const background = layers.find((item) => item.slot === 'background')
-  const hasFocusArt = focus && (avatar !== 'turtle' || focus === 'arms')
-  const src = hasFocusArt
-    ? `/avatars/focus/${avatar}-${focus}.png`
-    : `/avatars/${avatar}-${evolved ? 'evolved' : 'starter'}.png`
-  return (
-    <div
-      className={`fitted-avatar fit-${avatar} ${evolved || hasFocusArt ? 'fit-grown' : 'fit-starter'} ${background ? `scene-${background.styleKey}` : ''}`}
-      style={
-        background
-          ? ({
-              '--scene-a': background.primaryColor,
-              '--scene-b': background.accentColor,
-            } as React.CSSProperties)
-          : undefined
-      }
-    >
-      <svg
-        className="avatar-composite"
-        viewBox="0 0 100 100"
-        role="img"
-        aria-label={`${hasFocusArt ? `${focus}-focused` : evolved ? 'Evolved' : 'Starter'} ${avatar} avatar${layers.length ? ` wearing ${layers.map((item) => item.name).join(', ')}` : ''}`}
-      >
-        <image href={src} width="100" height="100" preserveAspectRatio="xMidYMid meet" />
-        {layers
-          .filter((item) => item.slot !== 'background')
-          .map((item) => (
-            <GarmentLayer item={item} key={item.id} />
-          ))}
-      </svg>
-    </div>
-  )
-}
-
-function GarmentLayer({ item }: { item: ShopItem }) {
-  if (item.slot === 'top')
-    return (
-      <g className={`garment top ${item.styleKey}`}>
-        <path
-          d="M32 40 Q50 32 68 40 L73 58 Q65 66 50 64 Q35 66 27 58Z"
-          fill={item.primaryColor}
-          stroke={item.accentColor}
-          strokeWidth="1.6"
-        />
-        <path d="M36 41 Q50 50 64 41" fill="none" stroke={item.accentColor} strokeWidth="2" />
-      </g>
-    )
-  if (item.slot === 'bottom')
-    return (
-      <g className="garment bottom">
-        <path
-          d="M34 62 Q50 66 66 62 L70 76 L55 77 L50 69 L45 77 L30 76Z"
-          fill={item.primaryColor}
-          stroke={item.accentColor}
-          strokeWidth="1.5"
-        />
-      </g>
-    )
-  if (item.slot === 'shoes')
-    return (
-      <g
-        className="garment shoes"
-        fill={item.primaryColor}
-        stroke={item.accentColor}
-        strokeWidth="1.2"
-      >
-        <ellipse cx="37" cy="88" rx="12" ry="5" />
-        <ellipse cx="64" cy="88" rx="12" ry="5" />
-      </g>
-    )
-  if (item.styleKey === 'training-cape')
-    return (
-      <path
-        className="garment cape"
-        d="M32 38 Q50 45 68 38 L77 76 Q50 88 23 76Z"
-        fill={item.primaryColor}
-        stroke={item.accentColor}
-        strokeWidth="1.5"
-        opacity=".85"
-      />
-    )
-  if (item.styleKey === 'pulse-headband')
-    return (
-      <path
-        className="garment headband"
-        d="M34 22 Q50 13 66 22"
-        fill="none"
-        stroke={item.primaryColor}
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-    )
-  return (
-    <g className="garment gloves" fill={item.primaryColor} stroke={item.accentColor}>
-      <ellipse cx="25" cy="53" rx="6" ry="8" />
-      <ellipse cx="75" cy="53" rx="6" ry="8" />
-    </g>
-  )
 }
 
 export default function FlexiApp({ players }: { players: LeaderboardPlayer[] }) {
@@ -1400,142 +1248,6 @@ function ClosetPanel({
   )
 }
 
-function ShopTab({
-  avatar,
-  evolved,
-  items,
-  owned,
-  equipped,
-  level,
-  message,
-  onPurchase,
-  onEquip,
-}: {
-  avatar: (typeof avatars)[number]
-  evolved: boolean
-  items: ShopItem[]
-  owned: string[]
-  equipped: Equipped
-  level: number
-  message: string
-  onPurchase: (item: ShopItem) => void
-  onEquip: (item: ShopItem) => void
-}) {
-  const [category, setCategory] = useState<'all' | ShopItem['category']>('all')
-  const [preview, setPreview] = useState<ShopItem | null>(null)
-  const visible = category === 'all' ? items : items.filter((item) => item.category === category)
-  return (
-    <section className="shop-page">
-      <header className="shop-heading">
-        <div>
-          <span className="eyebrow">FLEXI SHOP</span>
-          <h1>Make your buddy yours.</h1>
-          <p>Try on fitted gear, unlock rewards, and build a look that follows you across Flexi.</p>
-        </div>
-        <div className="coin-balance">
-          <Icon name="bolt" />
-          <div>
-            <b>{level}</b>
-            <span>Current level</span>
-          </div>
-        </div>
-      </header>
-      <div className="dressing-room">
-        <div className="shop-avatar">
-          <FittedAvatar
-            avatar={avatar.key}
-            evolved={evolved}
-            items={items}
-            equipped={equipped}
-            preview={preview}
-          />
-        </div>
-        <div className="tryon-copy">
-          <span className="eyebrow">LIVE TRY-ON</span>
-          <h2>{preview?.name || 'Your current outfit'}</h2>
-          <p>
-            {preview?.description ||
-              'Select any item below to preview it without changing your saved outfit.'}
-          </p>
-          {preview && (
-            <div className="tryon-actions">
-              <button className="secondary" onClick={() => setPreview(null)}>
-                Clear preview
-              </button>
-              {owned.includes(preview.id) ? (
-                <button
-                  className="primary"
-                  onClick={() => {
-                    onEquip(preview)
-                    setPreview(null)
-                  }}
-                >
-                  Equip item
-                </button>
-              ) : (
-                <button
-                  className="primary"
-                  disabled={!preview.unlocked}
-                  onClick={() => onPurchase(preview)}
-                >
-                  {preview.unlocked ? 'Claim & equip' : `Unlocks at level ${preview.minimumLevel}`}
-                </button>
-              )}
-            </div>
-          )}
-          {message && <div className="shop-message">{message}</div>}
-        </div>
-      </div>
-      <div className="shop-filters">
-        {(['all', 'clothing', 'accessories', 'backgrounds', 'special'] as const).map((item) => (
-          <button
-            key={item}
-            className={category === item ? 'active' : ''}
-            onClick={() => setCategory(item)}
-          >
-            {item[0].toUpperCase() + item.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div className="product-grid">
-        {!visible.length && (
-          <div className="empty-feed">
-            No rewards in this category yet. Check back as the catalog grows.
-          </div>
-        )}
-        {visible.map((item) => (
-          <article className="product-card" key={item.id}>
-            <div className="product-preview">
-              <FittedAvatar avatar="bunny" evolved items={items} equipped={{}} preview={item} />
-            </div>
-            <div className="product-meta">
-              <span className="acquisition free">
-                {item.owned ? 'IN YOUR CLOSET' : 'LEVEL REWARD'}
-              </span>
-              <h3>{item.name}</h3>
-              <p>{item.description}</p>
-              <small>
-                <Icon name={item.unlocked ? 'check' : 'lock'} />
-                Level {item.minimumLevel}
-              </small>
-              <footer>
-                <b>{item.owned ? 'Owned' : item.unlocked ? 'Ready to claim' : 'Locked'}</b>
-                <div>
-                  <button onClick={() => setPreview(item)}>Try on</button>
-                  {owned.includes(item.id) && (
-                    <button className="equip-quick" onClick={() => onEquip(item)}>
-                      Equip
-                    </button>
-                  )}
-                </div>
-              </footer>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  )
-}
 
 function ScheduleModal({
   date,

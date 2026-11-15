@@ -461,6 +461,11 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
     await expect(page.getByText(`${name} claimed and equipped.`)).toBeVisible()
   }
   expect(Object.keys(app.outfits[alice]).sort()).toEqual(['shoes', 'top'])
+  await page.getByRole('button', { name: 'My closet', exact: true }).click()
+  await expect(page.locator('.product-card')).toHaveCount(2)
+  await expect(page.locator('.product-card').filter({ hasText: 'Quiet Grove' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Discover', exact: true }).click()
+  await expect(page.locator('.product-card')).toHaveCount(3)
   await page
     .locator('.product-card')
     .filter({ has: page.getByRole('heading', { name: 'Quiet Grove', exact: true }) })

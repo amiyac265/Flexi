@@ -1,0 +1,17 @@
+.shop-page .shop-view-switch {
+  display: flex;
+  gap: 8px;
+  margin: 24px 0 16px;
+}
+.shop-page .shop-view-switch button {
+  border: 1px solid #dee2ca;
+  border-radius: 999px;
+  padding: 10px 20px;
+  background: white;
+  color: var(--ink);
+  font-weight: 700;
+}
+.shop-page .shop-view-switch button.active {
+  background: var(--ink);
+  color: white;
+}
