@@ -3,8 +3,25 @@ export const AVATARS = ['bunny', 'panda', 'turtle', 'deer'] as const
 export type Avatar = typeof AVATARS[number]
 export const XP_PER_DAY = 100
 export const XP_PER_LEVEL = 500
-export const ACTIVITIES = ['strength', 'running', 'walking', 'cycling', 'yoga', 'sports', 'other'] as const
+export const ACTIVITIES = [
+  'strength',
+  'running',
+  'walking',
+  'cycling',
+  'rowing',
+  'swimming',
+  'elliptical',
+  'stair-climber',
+  'hiking',
+  'jump-rope',
+  'yoga',
+  'sports',
+  'other',
+] as const
 export const INTENSITIES = ['light', 'moderate', 'intense'] as const
+export const DISTANCE_UNITS = ['mi', 'km', 'm', 'yd'] as const
+export const SPORTS = ['basketball', 'soccer', 'football', 'tennis', 'volleyball', 'baseball-softball', 'hockey', 'golf', 'pickleball', 'other'] as const
+export const MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'legs', 'glutes', 'core'] as const
 export const FOCUS_AREAS = ['arms', 'chest', 'legs', 'full-body'] as const
 export const WORKOUT_TYPES = ['strength', 'cardio', 'mobility', 'sports', 'recovery'] as const
 export const EQUIPMENT_SLOTS = ['top', 'bottom', 'shoes', 'accessory', 'background'] as const
@@ -107,23 +124,27 @@ export function weekStart(day: string): string {
   return addDays(day, -((weekday + 6) % 7))
 }
 
+export type LoggedSet = { reps: number; weightKg: number }
 export type LoggedExercise = {
   name: string; sets?: number; reps?: number; weightKg?: number; durationSeconds?: number
+  muscleGroup?: typeof MUSCLE_GROUPS[number]; setDetails?: LoggedSet[]
 }
 export type WorkoutInput = {
   requestId: string; title: string; durationMinutes: number; notes?: string; exercises: LoggedExercise[]
   activity?: typeof ACTIVITIES[number]; intensity?: typeof INTENSITIES[number]; focusArea?: typeof FOCUS_AREAS[number]; performedAt?: string
+  distance?: number; distanceUnit?: typeof DISTANCE_UNITS[number]
+  sport?: typeof SPORTS[number]
 }
 
 export function workoutInput(value: unknown): WorkoutInput {
   const data = object(value)
-  allowFields(data, ['requestId', 'title', 'durationMinutes', 'notes', 'exercises', 'activity', 'intensity', 'focusArea', 'performedAt'])
+  allowFields(data, ['requestId', 'title', 'durationMinutes', 'notes', 'exercises', 'activity', 'intensity', 'focusArea', 'performedAt', 'distance', 'distanceUnit', 'sport'])
   const requestId = retryId(data.requestId)
   const raw = data.exercises ?? []
   if (!Array.isArray(raw) || raw.length > 30) throw new BackendError('INVALID_INPUT', 'Use at most 30 exercises.')
   const exercises = raw.map((value) => {
     const exercise = object(value)
-    allowFields(exercise, ['name', 'sets', 'reps', 'weightKg', 'durationSeconds'])
+    allowFields(exercise, ['name', 'sets', 'reps', 'weightKg', 'durationSeconds', 'muscleGroup', 'setDetails'])
     const result: LoggedExercise = { name: text(exercise.name, 'exercise name') }
     if (exercise.sets !== undefined) result.sets = integer(exercise.sets, 'sets', 1, 100)
     if (exercise.reps !== undefined) result.reps = integer(exercise.reps, 'reps', 1, 1000)
@@ -133,6 +154,26 @@ export function workoutInput(value: unknown): WorkoutInput {
         throw new BackendError('INVALID_INPUT', 'weightKg must be a number from 0 to 2000.')
       }
       result.weightKg = Math.round(exercise.weightKg * 1000) / 1000
+    }
+    if (exercise.muscleGroup !== undefined) {
+      result.muscleGroup = choice(exercise.muscleGroup, 'muscleGroup', MUSCLE_GROUPS)
+    }
+    if (exercise.setDetails !== undefined) {
+      if (!Array.isArray(exercise.setDetails) || exercise.setDetails.length < 1 || exercise.setDetails.length > 20) {
+        throw new BackendError('INVALID_INPUT', 'Use 1–20 sets per exercise.')
+      }
+      result.setDetails = exercise.setDetails.map((value) => {
+        const set = object(value)
+        allowFields(set, ['reps', 'weightKg'])
+        const reps = integer(set.reps, 'reps', 1, 1000)
+        if (typeof set.weightKg !== 'number' || !Number.isFinite(set.weightKg) || set.weightKg < 0 || set.weightKg > 2000) {
+          throw new BackendError('INVALID_INPUT', 'weightKg must be a number from 0 to 2000.')
+        }
+        return { reps, weightKg: Math.round(set.weightKg * 1000) / 1000 }
+      })
+    }
+    if ((result.muscleGroup === undefined) !== (result.setDetails === undefined)) {
+      throw new BackendError('INVALID_INPUT', 'Provide both muscleGroup and setDetails.')
     }
     return result
   })
@@ -144,6 +185,17 @@ export function workoutInput(value: unknown): WorkoutInput {
   if ('activity' in data) result.activity = choice(data.activity, 'activity', ACTIVITIES)
   if ('intensity' in data) result.intensity = choice(data.intensity, 'intensity', INTENSITIES)
   if ('focusArea' in data) result.focusArea = choice(data.focusArea, 'focusArea', FOCUS_AREAS)
+  if ('distance' in data) {
+    if (typeof data.distance !== 'number' || !Number.isFinite(data.distance) || data.distance < 0.001 || data.distance > 10000) {
+      throw new BackendError('INVALID_INPUT', 'distance must be a number from 0.001 to 10000.')
+    }
+    result.distance = Math.round(data.distance * 1000) / 1000
+  }
+  if ('distanceUnit' in data) result.distanceUnit = choice(data.distanceUnit, 'distanceUnit', DISTANCE_UNITS)
+  if ((result.distance === undefined) !== (result.distanceUnit === undefined)) {
+    throw new BackendError('INVALID_INPUT', 'Provide both distance and distanceUnit.')
+  }
+  if ('sport' in data) result.sport = choice(data.sport, 'sport', SPORTS)
   if ('performedAt' in data) {
     result.performedAt = instant(data.performedAt, 'performedAt')
     if (Date.parse(result.performedAt) > Date.now() || Date.parse(result.performedAt) < 0) throw new BackendError('INVALID_INPUT', 'Choose a past workout time from 1970 onward.')

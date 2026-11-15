@@ -9,20 +9,22 @@ import {
   type CalendarInput,
   type OnboardingInput,
   type Progress,
-  type WorkoutInput,
 } from '@/backend/domain'
 import type { UserProfile, WorkoutLog, CalendarEvent } from '@/backend/data'
 import { eventOnDay, googleCalendarURL, localDateTime, zonedInstant } from '@/lib/frontend-data'
 import { useFlexi, useCalendar, messageFor } from './use-flexi'
 import AuthPanel from './AuthPanel'
-import ShopTab from './ShopTab'
+import { Icon } from './Icon'
+import { useDialog } from './use-dialog'
 import {
-  Icon,
-  AvatarArt,
-  FittedAvatar,
-  type ShopItem,
-  type Equipped,
-} from './FlexiVisuals'
+  isCardioActivity,
+  WorkoutModal,
+  WorkoutTypeModal,
+  workoutInputFromForm,
+  type WorkoutType,
+} from './WorkoutLogging'
+import ShopTab from './ShopTab'
+import { AvatarArt, FittedAvatar, type ShopItem, type Equipped } from './FlexiVisuals'
 
 const avatars = [
   { name: 'Pip', animal: 'Bunny', key: 'bunny', trait: 'Quick starter' },
@@ -142,6 +144,9 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
   const { api, snapshot, error, loading, busy, refresh, run } = useFlexi(userId)
   const [tab, setTab] = useState<'home' | 'social' | 'profile' | 'shop'>('home')
   const [workoutOpen, setWorkoutOpen] = useState(false)
+  const [workoutTypeOpen, setWorkoutTypeOpen] = useState(false)
+  const [workoutType, setWorkoutType] = useState<WorkoutType>('weight')
+  const [workoutZone, setWorkoutZone] = useState('UTC')
   const [workoutDraft, setWorkoutDraft] = useState(() => readDraft(userId, 'workout', workoutInput))
   const [calendarDraft, setCalendarDraft] = useState(() =>
     readDraft(userId, 'calendar', calendarInput),
@@ -157,6 +162,10 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
   const [calendarRevision, setCalendarRevision] = useState(0)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (zone) setWorkoutZone(zone)
+  }, [])
   if (!snapshot)
     return error ? (
       <main className="app-shell">
@@ -205,18 +214,7 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
     const data = new FormData(event.currentTarget)
     setFormError('')
     void run(async () => {
-      const draft =
-        workoutDraft ??
-        workoutInput({
-          requestId: crypto.randomUUID(),
-          title: activityLabel(String(data.get('activity'))),
-          activity: data.get('activity'),
-          intensity: data.get('intensity'),
-          focusArea: data.get('focusArea'),
-          durationMinutes: Number(data.get('duration')),
-          performedAt: zonedInstant(String(data.get('performedAt')), profile.timezone),
-          notes: String(data.get('notes') ?? ''),
-        })
+      const draft = workoutDraft ?? workoutInputFromForm(data, workoutZone)
       setWorkoutDraft(draft)
       storeDraft(userId, 'workout', draft)
       try {
@@ -364,7 +362,7 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
               feedback={feedback}
               shopItems={shopItems}
               equipped={equipped}
-              onWorkout={() => setWorkoutOpen(true)}
+              onWorkout={() => setWorkoutTypeOpen(true)}
               train={train}
               onProfile={() => setTab('profile')}
             />
@@ -465,11 +463,22 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
           ))}
         </nav>
       </fieldset>
+      {workoutTypeOpen && (
+        <WorkoutTypeModal
+          onClose={() => setWorkoutTypeOpen(false)}
+          onSelect={(type) => {
+            setWorkoutType(type)
+            setWorkoutTypeOpen(false)
+            setWorkoutOpen(true)
+          }}
+        />
+      )}
       {workoutOpen && (
         <WorkoutModal
           pending={busy}
           draft={workoutDraft}
-          zone={profile.timezone}
+          type={workoutType}
+          zone={workoutZone}
           error={formError}
           onClose={() => {
             if (!busy) {
@@ -497,22 +506,6 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
         />
       )}
     </div>
-  )
-}
-
-function activityLabel(activity: string) {
-  return (
-    (
-      {
-        strength: 'Strength training',
-        running: 'Running',
-        walking: 'Walking',
-        cycling: 'Cycling',
-        yoga: 'Yoga or mobility',
-        sports: 'Sports',
-        other: 'Other activity',
-      } as Record<string, string>
-    )[activity] ?? 'Workout'
   )
 }
 
@@ -1154,8 +1147,14 @@ function WorkoutHistory({
           <div>
             <b>{workout.title}</b>
             <small>
-              {formatTime(workout.performedAt, zone)} · {workout.durationMinutes} minutes ·{' '}
-              {workout.intensity} · {workout.focusArea}
+              {formatTime(workout.performedAt, zone)} · {workout.durationMinutes} minutes
+              {workout.distance && workout.distanceUnit
+                ? ` · ${workout.distance} ${workout.distanceUnit}`
+                : ''}
+              {workout.intensity ? ` · ${workout.intensity}` : ''}
+              {!isCardioActivity(workout.activity) && workout.activity !== 'sports'
+                ? ` · ${workout.focusArea}`
+                : ''}
             </small>
             {workout.notes && <p>{workout.notes}</p>}
           </div>
@@ -1249,207 +1248,6 @@ function ClosetPanel({
   )
 }
 
-function useDialog(pending: boolean, onClose: () => void) {
-  const ref = useRef<HTMLElement>(null)
-  const latest = useRef({ pending, onClose })
-  latest.current = { pending, onClose }
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const controls = () =>
-      Array.from(
-        ref.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
-        ) ?? [],
-      ).filter((element) => !element.matches(':disabled'))
-    ;(controls()[0] ?? ref.current)?.focus()
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !latest.current.pending) {
-        event.preventDefault()
-        latest.current.onClose()
-      }
-      if (event.key !== 'Tab') return
-      const focusable = controls(),
-        first = focusable[0],
-        last = focusable.at(-1)
-      if (!first) {
-        event.preventDefault()
-        ref.current?.focus()
-        return
-      }
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last?.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener('keydown', keydown)
-    return () => {
-      document.body.style.overflow = overflow
-      document.removeEventListener('keydown', keydown)
-      if (previous?.isConnected) previous.focus()
-    }
-  }, [])
-  return ref
-}
-
-function WorkoutModal({
-  pending,
-  draft,
-  zone,
-  error,
-  onClose,
-  onSubmit,
-}: {
-  pending: boolean
-  draft: WorkoutInput | null
-  zone: string
-  error: string
-  onClose: () => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-}) {
-  const dialog = useDialog(pending, onClose)
-  return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !pending) onClose()
-      }}
-    >
-      <section
-        ref={dialog}
-        tabIndex={-1}
-        className="workout-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="workout-title"
-      >
-        <div className="modal-heading">
-          <div>
-            <span className="eyebrow">ADD ACTIVITY</span>
-            <h2 id="workout-title">Log your workout</h2>
-            <p>Every day you show up helps your buddy grow.</p>
-          </div>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onClose}
-            aria-label="Close workout form"
-          >
-            ×
-          </button>
-        </div>
-        <form onSubmit={onSubmit}>
-          <fieldset disabled={pending || Boolean(draft)}>
-            <label className="full-field">
-              <span>Activity</span>
-              <select name="activity" defaultValue={draft?.activity ?? 'strength'} required>
-                <option value="strength">Strength training</option>
-                <option value="running">Running</option>
-                <option value="walking">Walking</option>
-                <option value="cycling">Cycling</option>
-                <option value="yoga">Yoga or mobility</option>
-                <option value="sports">Sports</option>
-                <option value="other">Other activity</option>
-              </select>
-            </label>
-            <div className="field-row">
-              <label>
-                <span>Duration</span>
-                <div className="input-suffix">
-                  <input
-                    name="duration"
-                    type="number"
-                    min="1"
-                    max="1440"
-                    defaultValue={draft?.durationMinutes ?? 30}
-                    required
-                  />
-                  <small>min</small>
-                </div>
-              </label>
-              <label>
-                <span>Intensity</span>
-                <select name="intensity" defaultValue={draft?.intensity ?? 'moderate'} required>
-                  <option value="light">Light</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="intense">Intense</option>
-                </select>
-              </label>
-            </div>
-            <label className="full-field">
-              <span>Area trained</span>
-              <select name="focusArea" defaultValue={draft?.focusArea ?? 'arms'} required>
-                <option value="arms">Arms</option>
-                <option value="chest">Chest</option>
-                <option value="legs">Legs</option>
-                <option value="full-body">Full body</option>
-              </select>
-            </label>
-            <label className="full-field">
-              <span>Date & time · {zone}</span>
-              <input
-                name="performedAt"
-                type="datetime-local"
-                defaultValue={localDateTime(
-                  draft?.performedAt ? new Date(draft.performedAt) : new Date(),
-                  zone,
-                )}
-                max={localDateTime(new Date(), zone)}
-                required
-              />
-            </label>
-            <label className="full-field">
-              <span>
-                Notes <small>optional</small>
-              </span>
-              <textarea
-                name="notes"
-                defaultValue={draft?.notes ?? ''}
-                maxLength={2000}
-                rows={3}
-                placeholder="How did the workout feel?"
-              />
-            </label>
-          </fieldset>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
-          {draft && !pending && (
-            <p className="status-notice">
-              Your submission is saved in this tab. Retry it to confirm the outcome without creating
-              a duplicate.
-            </p>
-          )}
-          <div className="reward-preview">
-            <Icon name="bolt" />
-            <div>
-              <b>100 XP for each active day</b>
-              <span>
-                Additional workouts on the same day add to your history. Every 500 XP earns a new
-                level.
-              </span>
-            </div>
-          </div>
-          <div className="modal-actions">
-            <button type="button" className="secondary" disabled={pending} onClick={onClose}>
-              Close
-            </button>
-            <button type="submit" className="primary save-workout" disabled={pending}>
-              {pending ? 'Saving…' : draft ? 'Retry saved workout' : 'Save workout'}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
-  )
-}
 
 function ScheduleModal({
   date,

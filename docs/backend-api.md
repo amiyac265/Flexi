@@ -70,7 +70,7 @@ All paths below begin with `/api/flexi`. Success is HTTP 200 with `{ "data": ...
 | GET | `/content?kind=news&page=1&limit=20` | Published content; optional `kind=news|tutorial` |
 | GET | `/workouts?page=1&limit=20` | Completed workout history |
 | GET | `/workouts/:id` | One owned workout, including a voided record when queried explicitly |
-| POST | `/workouts` | Log a completed workout; required `requestId`, `title`, `durationMinutes`; optional `notes`, `exercises`, `activity`, `intensity`, `focusArea`, `performedAt` |
+| POST | `/workouts` | Log a completed workout; required `requestId`, `title`, `durationMinutes`; optional `notes`, `exercises`, `activity`, `intensity`, `focusArea`, `performedAt`, paired `distance`/`distanceUnit`, and `sport` |
 | DELETE | `/workouts/:id` | Void a workout; safe to repeat; soft deletion preserves retry identity |
 | GET | `/calendar?from=...&to=...&page=1&limit=20` | Owned entries overlapping the requested interval; cancelled entries excluded |
 | POST | `/calendar` | Required `title`, `startsAt`, `endsAt`, `timezone`; optional `notes`, `status`, `workoutType`, `requestId` |
@@ -97,15 +97,21 @@ Example request:
   "durationMinutes": 40,
   "notes": "Felt good",
   "exercises": [
-    { "name": "Push-ups", "sets": 3, "reps": 10, "weightKg": 0 },
-    { "name": "Plank", "durationSeconds": 60 }
+    {
+      "name": "Bench press",
+      "muscleGroup": "chest",
+      "setDetails": [
+        { "reps": 10, "weightKg": 40 },
+        { "reps": 8, "weightKg": 45 }
+      ]
+    }
   ]
 }
 ```
 
-`exercises` is optional and limited to 30 summaries. This release records a completed workout directly; it does not implement live per-set autosave, workout templates, or a start/finish state machine. Duration must be an integer from 1 to 1,440 minutes. The server assigns owner and `completedAt` (receipt time). Optional `performedAt` accepts an offset-qualified ISO instant from 1970 through now; otherwise it defaults to receipt time. SQL derives `localDate` from that time in the fixed account timezone. These values cannot be edited after creation. Client-submitted XP, level, owner, `localDate` and `completedAt` are rejected.
+`exercises` is limited to 30 entries. New strength workouts require at least one exercise with `muscleGroup` (`chest|back|shoulders|biceps|triceps|legs|glutes|core`) and 1–20 `setDetails`; every set requires integer `reps` and `weightKg` from 0–2,000. Legacy aggregate exercise summaries remain readable and retryable. This release records a completed workout directly; it does not implement live per-set autosave, workout templates, or a start/finish state machine. Duration must be an integer from 1 to 1,440 minutes. The server assigns owner and `completedAt` (receipt time). Optional `performedAt` accepts an offset-qualified ISO instant from 1970 through now; otherwise it defaults to receipt time. SQL derives `localDate` from that time in the fixed account timezone. These values cannot be edited after creation. Client-submitted XP, level, owner, `localDate` and `completedAt` are rejected.
 
-The imported form also stores `activity` (`strength|running|walking|cycling|yoga|sports|other`), `intensity` (`light|moderate|intense`), and `focusArea` (`arms|chest|legs|full-body`). Defaults are `other`, `moderate`, and `full-body`. These details do not change the reward formula. A backdated workout contributes to its actual local day, not the day it was submitted. Historical records retain their original local dates and retry payloads.
+The imported form also stores `activity` (`strength|running|walking|cycling|rowing|swimming|elliptical|stair-climber|hiking|jump-rope|yoga|sports|other`), optional `intensity` (`light|moderate|intense`), and `focusArea` (`arms|chest|legs|full-body`). New cardio workouts require `distance` (0.001–10,000) and `distanceUnit` (`mi|km|m|yd`) together. New sport workouts use activity `sports` and require `sport` (`basketball|soccer|football|tennis|volleyball|baseball-softball|hockey|golf|pickleball|other`). Activity and focus default to `other` and `full-body`; intensity may be null. These details do not change the reward formula. A backdated workout contributes to its actual local day, not the day it was submitted. Historical records retain their original local dates and retry payloads.
 
 POST returns `{ workout, replayed }`. A repeat with the same user/request ID and normalized payload returns the existing record. A different payload with the same ID returns 409. Retrying a voided workout returns its voided state; use a new ID for an intentional replacement. IDs deduplicate within each account.
 

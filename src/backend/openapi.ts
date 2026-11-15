@@ -12,9 +12,13 @@ const input = (properties: Record<string, Schema>, required: string[] = []): Sch
 const array = (items: Schema): Schema => ({ type: 'array', items })
 const page = (items: Schema, extra: Record<string, Schema> = {}): Schema => obj({ docs: array(items), totalDocs: integer(), page: integer(1), totalPages: integer(), hasNextPage: { type: 'boolean' }, ...extra })
 const profileFields = { displayName: { ...string(60), minLength: 1 }, avatar }
-const exerciseFields = { name: { ...string(120), minLength: 1 }, sets: integer(1, 100), reps: integer(1, 1000), weightKg: { type: 'number', minimum: 0, maximum: 2000 }, durationSeconds: integer(1, 86400) }
-const activity = { type: 'string', enum: ['strength', 'running', 'walking', 'cycling', 'yoga', 'sports', 'other'] }
+const muscleGroup = { type: 'string', enum: ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'legs', 'glutes', 'core'] }
+const setFields = { reps: integer(1, 1000), weightKg: { type: 'number', minimum: 0, maximum: 2000 } }
+const exerciseFields = { name: { ...string(120), minLength: 1 }, sets: integer(1, 100), reps: integer(1, 1000), weightKg: { type: 'number', minimum: 0, maximum: 2000 }, durationSeconds: integer(1, 86400), muscleGroup, setDetails: { ...array(ref('ExerciseSet')), minItems: 1, maxItems: 20 } }
+const activity = { type: 'string', enum: ['strength', 'running', 'walking', 'cycling', 'rowing', 'swimming', 'elliptical', 'stair-climber', 'hiking', 'jump-rope', 'yoga', 'sports', 'other'] }
 const intensity = { type: 'string', enum: ['light', 'moderate', 'intense'] }
+const distanceUnit = { type: 'string', enum: ['mi', 'km', 'm', 'yd'] }
+const sport = { type: 'string', enum: ['basketball', 'soccer', 'football', 'tennis', 'volleyball', 'baseball-softball', 'hockey', 'golf', 'pickleball', 'other'] }
 const focusArea = { type: 'string', enum: ['arms', 'chest', 'legs', 'full-body'] }
 const workoutType = { type: 'string', enum: ['strength', 'cardio', 'mobility', 'sports', 'recovery'] }
 const equipmentSlot = { type: 'string', enum: ['top', 'bottom', 'shoes', 'accessory', 'background'] }
@@ -28,7 +32,8 @@ const workoutFields = {
   requestId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{8,80}$', description: 'Generate once per intended workout; reuse the same ID and payload for retries.' },
   title: { ...string(120), minLength: 1 }, durationMinutes: integer(1, 1440), notes: string(2000),
   exercises: { ...array(ref('Exercise')), maxItems: 30, default: [] },
-  activity, intensity, focusArea, performedAt: { ...timestamp, description: 'Optional actual workout time, from 1970 onward and no later than now. Defaults to server time. Immutable after logging.' },
+  activity, intensity, focusArea, distance: { type: 'number', minimum: 0.001, maximum: 10000 }, distanceUnit, sport,
+  performedAt: { ...timestamp, description: 'Optional actual workout time, from 1970 onward and no later than now. Defaults to server time. Immutable after logging.' },
 }
 const calendarFields = {
   title: { ...string(120), minLength: 1 }, startsAt: timestamp, endsAt: timestamp,
@@ -42,8 +47,9 @@ const schemas: Record<string, Schema> = {
   OnboardingInput: input(preferenceFields, Object.keys(preferenceFields)),
   ProfileUpdate: input(profileFields),
   Exercise: input(exerciseFields, ['name']),
+  ExerciseSet: input(setFields, ['reps', 'weightKg']),
   WorkoutInput: input(workoutFields, ['requestId', 'title', 'durationMinutes']),
-  Workout: obj({ id: uuid, ...workoutFields, completedAt: timestamp, localDate: { type: 'string', format: 'date' }, status: { type: 'string', enum: ['completed', 'voided'] }, voidedAt: { ...timestamp, nullable: true } }),
+  Workout: obj({ id: uuid, ...workoutFields, intensity: { ...intensity, nullable: true }, distance: { ...workoutFields.distance, nullable: true }, distanceUnit: { ...distanceUnit, nullable: true }, sport: { ...sport, nullable: true }, completedAt: timestamp, localDate: { type: 'string', format: 'date' }, status: { type: 'string', enum: ['completed', 'voided'] }, voidedAt: { ...timestamp, nullable: true } }),
   WorkoutResult: obj({ workout: ref('Workout'), replayed: { type: 'boolean' } }),
   WorkoutPage: page(ref('Workout')),
   CalendarInput: input({ ...calendarFields, requestId: workoutFields.requestId }, ['title', 'startsAt', 'endsAt', 'timezone']),
