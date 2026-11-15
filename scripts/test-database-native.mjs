@@ -23,7 +23,11 @@ try {
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
     grant usage on schema public, auth to anon, authenticated;
     grant execute on function auth.uid() to anon, authenticated;`)
-  for (const file of readdirSync(join(root, 'supabase/migrations')).filter(f => f.endsWith('.sql')).sort()) sql(readFileSync(join(root, 'supabase/migrations', file), 'utf8'))
+  for (const file of readdirSync(join(root, 'supabase/migrations')).filter(f => f.endsWith('.sql')).sort()) {
+    sql(readFileSync(join(root, 'supabase/migrations', file), 'utf8'))
+    if (file === '20261102000000_flexi_core.sql') sql(readFileSync(join(root, 'tests/database/legacy-before.sql'), 'utf8'))
+    if (file === '20261114000000_frontend_integration.sql') sql(readFileSync(join(root, 'tests/database/legacy-after.sql'), 'utf8'))
+  }
   console.log(sql(readFileSync(join(root, 'tests/database/security.sql'), 'utf8')))
   const prefix = "set role authenticated; set request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';"
   const parallel = async (statement) => {
@@ -36,7 +40,9 @@ try {
   const claims = await parallel("select flexi_claim_cosmetic('00000000-0000-4000-8000-000000000013');")
   assert.equal(claims.filter(r => !r.replayed).length, 1)
   assert.equal(new Set(claims.map(r => r.inventory.id)).size, 1)
-  console.log('PASS: 8 concurrent workout retries and 8 concurrent claims each produce one record.')
+  const plans = await parallel(`select to_jsonb(flexi_create_calendar('{"requestId":"parallel-calendar","title":"Plan","startsAt":"2026-11-15T14:00:00Z","endsAt":"2026-11-15T15:00:00Z","timezone":"UTC"}'));`)
+  assert.equal(new Set(plans.map(r => r.id)).size, 1)
+  console.log('PASS: 8 concurrent workout retries, claims, and calendar retries each produce one record.')
   console.log('All database checks passed on an isolated PostgreSQL cluster.')
 } catch (error) {
   console.error(error.stderr?.toString() || error.message)

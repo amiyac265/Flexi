@@ -14,6 +14,8 @@ try {
     grant execute on function auth.uid() to anon, authenticated;`)
   for (const file of readdirSync(join(root, 'supabase/migrations')).filter(f => f.endsWith('.sql')).sort()) {
     await db.exec(readFileSync(join(root, 'supabase/migrations', file), 'utf8'))
+    if (file === '20261102000000_flexi_core.sql') await db.exec(readFileSync(join(root, 'tests/database/legacy-before.sql'), 'utf8'))
+    if (file === '20261114000000_frontend_integration.sql') { await db.exec(readFileSync(join(root, 'tests/database/legacy-after.sql'), 'utf8')); console.log('PASS: migration preserves legacy retries, workout dates, inventory and equipment.') }
     console.log(`PASS: applied ${file}`)
   }
   const results = await db.exec(readFileSync(join(root, 'tests/database/security.sql'), 'utf8'))
@@ -29,6 +31,8 @@ try {
   const claims = await Promise.all(Array.from({ length: 8 }, () => db.query("select flexi_claim_cosmetic('00000000-0000-4000-8000-000000000013') as result;")))
   assert.equal(claims.filter(r => !r.rows[0].result.replayed).length, 1)
   assert.equal(new Set(claims.map(r => r.rows[0].result.inventory.id)).size, 1)
+  const plans = await Promise.all(Array.from({ length: 8 }, () => db.query(`select to_jsonb(flexi_create_calendar('{"requestId":"parallel-calendar","title":"Plan","startsAt":"2026-11-15T14:00:00Z","endsAt":"2026-11-15T15:00:00Z","timezone":"UTC"}')) as result;`)))
+  assert.equal(new Set(plans.map(r => r.rows[0].result.id)).size, 1)
   await db.exec('reset role;')
   const seed = readFileSync(join(root, 'supabase/seed.sql'), 'utf8')
   await db.exec(seed); await db.exec(seed)

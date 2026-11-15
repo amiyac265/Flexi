@@ -1,11 +1,11 @@
-// SQL contract for supabase/migrations/20261102000000_flexi_core.sql.
+// SQL contract for the versioned migrations in supabase/migrations.
 // Replace with `supabase gen types typescript --linked` after project setup if desired.
-import type { Avatar, LoggedExercise } from './domain.ts'
-export type ProfileRow = { id: string; display_name: string; avatar: Avatar; timezone: string; weekly_goal: number; equipped_cosmetic_id: string | null; created_at: string }
-export type WorkoutRow = { id: string; owner: string; request_id: string; title: string; duration_minutes: number; notes: string; exercises: LoggedExercise[]; completed_at: string; local_date: string; status: 'completed' | 'voided'; voided_at: string | null }
-export type CalendarRow = { id: string; owner: string; title: string; starts_at: string; ends_at: string; timezone: string; notes: string; status: 'planned' | 'completed' | 'cancelled'; created_at: string }
+import type { Avatar, LoggedExercise, Equipment, OnboardingInput, WorkoutInput, CalendarInput } from './domain.ts'
+export type ProfileRow = { id: string; display_name: string; avatar: Avatar; timezone: string; weekly_goal: number; equipped_cosmetic_id: string | null; created_at: string; goals: OnboardingInput['goals']; experience_level: OnboardingInput['experienceLevel']; preferred_time: OnboardingInput['preferredTime']; calendar_provider: OnboardingInput['calendarProvider']; onboarding_completed: boolean; equipped_cosmetics: Equipment }
+export type WorkoutRow = { id: string; owner: string; request_id: string; title: string; duration_minutes: number; notes: string; exercises: LoggedExercise[]; completed_at: string; local_date: string; status: 'completed' | 'voided'; voided_at: string | null; activity: NonNullable<WorkoutInput['activity']>; intensity: NonNullable<WorkoutInput['intensity']>; focus_area: NonNullable<WorkoutInput['focusArea']>; performed_at: string }
+export type CalendarRow = { id: string; owner: string; title: string; starts_at: string; ends_at: string; timezone: string; notes: string; status: 'planned' | 'completed' | 'cancelled'; created_at: string; workout_type: NonNullable<CalendarInput['workoutType']>; request_id: string | null }
 export type ContentRow = { id: string; slug: string; title: string; kind: 'news' | 'tutorial'; summary: string; body: string | null; source_url: string | null; image_url: string | null; status: 'draft' | 'published'; published_at: string }
-export type CosmeticRow = { id: string; slug: string; name: string; description: string | null; slot: 'hat' | 'outfit' | 'accessory'; minimum_level: number; active: boolean; image_url: string | null }
+export type CosmeticRow = { id: string; slug: string; name: string; description: string | null; slot: 'hat' | 'outfit' | 'accessory' | 'top' | 'bottom' | 'shoes' | 'background'; minimum_level: number; active: boolean; image_url: string | null; category: 'clothing' | 'accessories' | 'backgrounds' | 'special'; style_key: string; primary_color: string; accent_color: string }
 export type InventoryRow = { id: string; owner: string; item: string; acquired_at: string }
 export type LeaderboardRow = { id: string; display_name: string; handle: string; points: number; workouts: number; streak: number; avatar: Avatar }
 export type ProgressDay = { local_date: string; workouts: number; minutes: number }
@@ -23,6 +23,7 @@ export type Database = {
       flexi_log_workout: Mutation<{ workout: WorkoutRow; replayed: boolean }>
       flexi_void_workout: { Args: { p_id: string }; Returns: WorkoutRow }
       flexi_update_profile: Mutation<ProfileRow>
+      flexi_save_onboarding: Mutation<ProfileRow>
       flexi_create_calendar: Mutation<CalendarRow>
       flexi_update_calendar: { Args: { p_id: string; p_input: Record<string, unknown> }; Returns: CalendarRow }
       flexi_claim_cosmetic: { Args: { p_id: string }; Returns: { inventory: InventoryRow; replayed: boolean } }

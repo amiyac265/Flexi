@@ -3,6 +3,39 @@ export const AVATARS = ['bunny', 'panda', 'turtle', 'deer'] as const
 export type Avatar = typeof AVATARS[number]
 export const XP_PER_DAY = 100
 export const XP_PER_LEVEL = 500
+export const ACTIVITIES = ['strength', 'running', 'walking', 'cycling', 'yoga', 'sports', 'other'] as const
+export const INTENSITIES = ['light', 'moderate', 'intense'] as const
+export const FOCUS_AREAS = ['arms', 'chest', 'legs', 'full-body'] as const
+export const WORKOUT_TYPES = ['strength', 'cardio', 'mobility', 'sports', 'recovery'] as const
+export const EQUIPMENT_SLOTS = ['top', 'bottom', 'shoes', 'accessory', 'background'] as const
+export const GOALS = ['build-muscle', 'get-stronger', 'lose-weight', 'improve-endurance', 'stay-consistent', 'move-better'] as const
+export type EquipmentSlot = typeof EQUIPMENT_SLOTS[number]
+export type Equipment = Partial<Record<EquipmentSlot, string | null>>
+
+export function choice<T extends string>(value: unknown, field: string, choices: readonly T[]): T {
+  if (typeof value !== 'string' || !choices.includes(value as T)) throw new BackendError('INVALID_INPUT', `Invalid ${field}.`)
+  return value as T
+}
+
+export function retryId(value: unknown): string {
+  const id = text(value, 'requestId', 80)
+  if (!/^[a-zA-Z0-9_-]{8,80}$/.test(id)) throw new BackendError('INVALID_INPUT', 'requestId must be 8–80 letters, digits, underscores or hyphens.')
+  return id
+}
+
+export type OnboardingInput = {
+  goals: Array<typeof GOALS[number]>; experienceLevel: 'beginner' | 'intermediate' | 'advanced';
+  weeklyGoal: number; preferredTime: 'morning' | 'midday' | 'evening' | 'flexible'; calendarProvider: 'google' | 'apple' | 'none'
+}
+export function onboardingInput(value: unknown): OnboardingInput {
+  const data = object(value)
+  allowFields(data, ['goals', 'experienceLevel', 'weeklyGoal', 'preferredTime', 'calendarProvider'])
+  if (!Array.isArray(data.goals) || data.goals.length < 1 || data.goals.length > 6) throw new BackendError('INVALID_INPUT', 'Choose 1–6 fitness goals.')
+  const goals = [...new Set(data.goals.map(goal => choice(goal, 'goal', GOALS)))]
+  return { goals, experienceLevel: choice(data.experienceLevel, 'experienceLevel', ['beginner', 'intermediate', 'advanced']),
+    weeklyGoal: integer(data.weeklyGoal, 'weeklyGoal', 1, 7), preferredTime: choice(data.preferredTime, 'preferredTime', ['morning', 'midday', 'evening', 'flexible']),
+    calendarProvider: choice(data.calendarProvider, 'calendarProvider', ['google', 'apple', 'none']) }
+}
 
 export class BackendError extends Error {
   status: number
@@ -79,15 +112,13 @@ export type LoggedExercise = {
 }
 export type WorkoutInput = {
   requestId: string; title: string; durationMinutes: number; notes?: string; exercises: LoggedExercise[]
+  activity?: typeof ACTIVITIES[number]; intensity?: typeof INTENSITIES[number]; focusArea?: typeof FOCUS_AREAS[number]; performedAt?: string
 }
 
 export function workoutInput(value: unknown): WorkoutInput {
   const data = object(value)
-  allowFields(data, ['requestId', 'title', 'durationMinutes', 'notes', 'exercises'])
-  const requestId = text(data.requestId, 'requestId', 80)
-  if (!/^[a-zA-Z0-9_-]{8,80}$/.test(requestId)) {
-    throw new BackendError('INVALID_INPUT', 'requestId must be 8–80 letters, digits, underscores or hyphens.')
-  }
+  allowFields(data, ['requestId', 'title', 'durationMinutes', 'notes', 'exercises', 'activity', 'intensity', 'focusArea', 'performedAt'])
+  const requestId = retryId(data.requestId)
   const raw = data.exercises ?? []
   if (!Array.isArray(raw) || raw.length > 30) throw new BackendError('INVALID_INPUT', 'Use at most 30 exercises.')
   const exercises = raw.map((value) => {
@@ -110,17 +141,25 @@ export function workoutInput(value: unknown): WorkoutInput {
     durationMinutes: integer(data.durationMinutes, 'durationMinutes', 1, 1440), exercises,
   }
   if (data.notes !== undefined && data.notes !== '') result.notes = text(data.notes, 'notes', 2000)
+  if ('activity' in data) result.activity = choice(data.activity, 'activity', ACTIVITIES)
+  if ('intensity' in data) result.intensity = choice(data.intensity, 'intensity', INTENSITIES)
+  if ('focusArea' in data) result.focusArea = choice(data.focusArea, 'focusArea', FOCUS_AREAS)
+  if ('performedAt' in data) {
+    result.performedAt = instant(data.performedAt, 'performedAt')
+    if (Date.parse(result.performedAt) > Date.now() || Date.parse(result.performedAt) < 0) throw new BackendError('INVALID_INPUT', 'Choose a past workout time from 1970 onward.')
+  }
   return result
 }
 
 export type CalendarInput = {
   title: string; startsAt: string; endsAt: string; timezone: string; notes?: string;
   status: 'planned' | 'completed' | 'cancelled'
+  requestId?: string; workoutType?: typeof WORKOUT_TYPES[number]
 }
 
 export function calendarInput(value: unknown): CalendarInput {
   const data = object(value)
-  allowFields(data, ['title', 'startsAt', 'endsAt', 'timezone', 'notes', 'status'])
+  allowFields(data, ['title', 'startsAt', 'endsAt', 'timezone', 'notes', 'status', 'requestId', 'workoutType'])
   const startsAt = instant(data.startsAt, 'startsAt')
   const endsAt = instant(data.endsAt, 'endsAt')
   const duration = Date.parse(endsAt) - Date.parse(startsAt)
@@ -130,6 +169,8 @@ export function calendarInput(value: unknown): CalendarInput {
   return {
     title: text(data.title, 'title'), startsAt, endsAt, timezone: timezone(data.timezone),
     status: status as CalendarInput['status'],
+    ...('requestId' in data ? { requestId: retryId(data.requestId) } : {}),
+    ...('workoutType' in data ? { workoutType: choice(data.workoutType, 'workoutType', WORKOUT_TYPES) } : {}),
     ...(data.notes !== undefined && data.notes !== '' ? { notes: text(data.notes, 'notes', 2000) } : {}),
   }
 }

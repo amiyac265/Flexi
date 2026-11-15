@@ -1,6 +1,6 @@
 /** Browser client for frontend integration. Supabase handles session persistence/refresh. */
 import type { CalendarEvent, CosmeticItem, Page, TrainingContent, UserCosmetic, UserProfile, WorkoutLog } from '../backend/data.ts'
-import { AVATARS, integer, text, timezone, type Avatar, type CalendarInput, type Progress, type WorkoutInput } from '../backend/domain.ts'
+import { AVATARS, integer, text, timezone, type Avatar, type CalendarInput, type Progress, type WorkoutInput, type Equipment, type OnboardingInput } from '../backend/domain.ts'
 import { browserSupabase } from './supabase/browser.ts'
 
 export class FlexiAPIError extends Error {
@@ -13,17 +13,18 @@ export class FlexiAPIError extends Error {
     this.status = status
   }
 }
-type Character = { avatar: Avatar; level: number; evolved: boolean; imagePath: string; equippedCosmetic: CosmeticItem | null }
+export type Character = { avatar: Avatar; level: number; evolved: boolean; imagePath: string; equippedCosmetic: CosmeticItem | null; equippedCosmetics: CosmeticItem[] }
 type PublicProfile = UserProfile
 type PublicWorkout = WorkoutLog
-type Train = { profile: PublicProfile; progress: Progress; recentWorkouts: PublicWorkout[]; upcomingWorkouts: CalendarEvent[]; news: TrainingContent[]; tutorials: TrainingContent[] }
-type ShopItem = CosmeticItem & { owned: boolean; unlocked: boolean }
-type PopulatedInventory = Omit<UserCosmetic, 'item'> & { item: CosmeticItem | string | null }
+export type Train = { profile: PublicProfile; progress: Progress; recentWorkouts: PublicWorkout[]; upcomingWorkouts: CalendarEvent[]; news: TrainingContent[]; tutorials: TrainingContent[] }
+export type ShopItem = CosmeticItem & { owned: boolean; unlocked: boolean }
+type PopulatedInventory = Omit<UserCosmetic, 'item'> & { item: CosmeticItem | null }
 
-export function createFlexiAPI(base = '/api') {
+export function createFlexiAPI(base = '/api', expectedUserId?: string) {
   async function request<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
     const { data: auth, error } = await browserSupabase().auth.getSession()
     if (error || !auth.session) throw new FlexiAPIError('AUTH_REQUIRED', 'Sign in with a Flexi account.', 401)
+    if (expectedUserId && auth.session.user.id !== expectedUserId) throw new FlexiAPIError('AUTH_REQUIRED', 'Your account changed. Please reopen this screen.', 401)
     const response = await fetch(`${base}${path}`, {
       method, cache: 'no-store', credentials: 'omit',
       headers: { Authorization: `Bearer ${auth.session.access_token}`, ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}) },
@@ -63,10 +64,19 @@ export function createFlexiAPI(base = '/api') {
       const { error } = await browserSupabase().auth.signOut()
       if (error) throw new FlexiAPIError(error.code ?? 'LOGOUT_FAILED', error.message, error.status ?? 500)
     },
+    resetPassword: async (email: string) => {
+      const { error } = await browserSupabase().auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` })
+      if (error) throw new FlexiAPIError(error.code ?? 'RESET_FAILED', error.message, error.status ?? 400)
+    },
+    updatePassword: async (password: string) => {
+      const { error } = await browserSupabase().auth.updateUser({ password })
+      if (error) throw new FlexiAPIError(error.code ?? 'UPDATE_FAILED', error.message, error.status ?? 400)
+    },
     session: () => browserSupabase().auth.getSession(),
     onAuthStateChange: (callback: Parameters<ReturnType<typeof browserSupabase>['auth']['onAuthStateChange']>[0]) => browserSupabase().auth.onAuthStateChange(callback),
     train: () => request<Train>('/flexi/train'),
     profile: () => request<PublicProfile>('/flexi/profile'),
+    saveOnboarding: (input: OnboardingInput) => request<PublicProfile>('/flexi/onboarding', 'POST', input),
     updateProfile: (input: { displayName?: string; avatar?: Avatar }) => request<PublicProfile>('/flexi/profile', 'PATCH', input),
     progress: () => request<Progress>('/flexi/progress'),
     content: (kind?: 'news' | 'tutorial', page = 1) => request<Page<TrainingContent>>(`/flexi/content${query({ kind, page })}`),
@@ -76,10 +86,10 @@ export function createFlexiAPI(base = '/api') {
     voidWorkout: (id: string) => request<PublicWorkout>(`/flexi/workouts/${encodeURIComponent(id)}`, 'DELETE'),
     calendar: (from: string, to: string, page = 1) => request<Page<CalendarEvent>>(`/flexi/calendar${query({ from, to, page })}`),
     createCalendarEvent: (input: Omit<CalendarInput, 'status'> & { status?: CalendarInput['status'] }) => request<CalendarEvent>('/flexi/calendar', 'POST', input),
-    updateCalendarEvent: (id: string, input: Partial<CalendarInput>) => request<CalendarEvent>(`/flexi/calendar/${encodeURIComponent(id)}`, 'PATCH', input),
+    updateCalendarEvent: (id: string, input: Partial<Omit<CalendarInput, 'requestId'>>) => request<CalendarEvent>(`/flexi/calendar/${encodeURIComponent(id)}`, 'PATCH', input),
     cancelCalendarEvent: (id: string) => request<CalendarEvent>(`/flexi/calendar/${encodeURIComponent(id)}`, 'DELETE'),
     character: () => request<Character>('/flexi/character'),
-    updateCharacter: (input: { avatar?: Avatar; equippedCosmeticId?: string | null }) => request<Character>('/flexi/character', 'PATCH', input),
+    updateCharacter: (input: { avatar?: Avatar; equippedCosmeticId?: string | null; equipped?: Equipment }) => request<Character>('/flexi/character', 'PATCH', input),
     shop: (page = 1) => request<Page<ShopItem> & { level: number }>(`/flexi/shop${query({ page })}`),
     inventory: (page = 1) => request<Page<PopulatedInventory>>(`/flexi/inventory${query({ page })}`),
     claimCosmetic: (id: string) => request<{ inventory: UserCosmetic; replayed: boolean }>(`/flexi/shop/${encodeURIComponent(id)}/claim`, 'POST', {}),

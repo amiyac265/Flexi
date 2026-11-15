@@ -13,7 +13,8 @@
     "test:backend": "node --experimental-strip-types --test tests/backend/*.test.ts",
     "test:database": "node scripts/test-database.mjs",
     "test:database:native": "node scripts/test-database-native.mjs",
-    "smoke:api": "node --env-file=.env.local --env-file=.env.smoke scripts/smoke-api.mjs"
+    "smoke:api": "node --env-file=.env.local --env-file=.env.smoke scripts/smoke-api.mjs",
+    "test:frontend": "playwright test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@apidevtools/swagger-parser": "^13.1.0",
     "@electric-sql/pglite": "^0.5.14",
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "24.12.3",
     "@types/react": "19.3.0",

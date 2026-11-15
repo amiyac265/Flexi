@@ -16,8 +16,11 @@ pnpm typecheck
 pnpm test:backend
 pnpm test:database
 pnpm build
+pnpm test:frontend
 ```
 
-The backend supports personal workouts/progress, calendar, characters, editorial content, and level-unlocked cosmetics. The exported frontend's personal demo counters still need wiring to `src/lib/flexi-api.ts`. Social interactions and battle passes are deferred. No hosted database has been provisioned by this repository alone.
+The backend supports personal workouts/progress, calendar, characters, editorial content, and level-unlocked cosmetics. The November Figma frontend is connected to `src/lib/flexi-api.ts`, including authentication, onboarding, workout history, calendar planning and layered avatar outfits. Apply the new `20261114000000_frontend_integration.sql` migration before using it. Social interactions and battle passes are deferred. No hosted database has been provisioned by this repository alone.
 
-Interactive API testing: start the app and open **http://localhost:3000/api-docs**. Raw OpenAPI: **http://localhost:3000/api/openapi**. Sign in with a confirmed Supabase test account on the docs page; no app frontend integration is needed.
+Interactive API testing: start the app and open **http://localhost:3000/api-docs**. Raw OpenAPI: **http://localhost:3000/api/openapi**. Sign in with a confirmed Supabase test account on the docs page; the app and API docs use separate login sessions.
+
+Browser tests use isolated Auth/API fixtures. Install Chromium with `pnpm exec playwright install chromium`, or use installed Chrome with `PLAYWRIGHT_CHANNEL=chrome pnpm test:frontend`. Hosted Auth/email validation remains a deployment check. See the [integration plan](docs/frontend-integration-plan.md).
