@@ -23,15 +23,15 @@ const calendarFields = {
   timezone: { ...string(100), example: 'America/New_York' }, notes: string(2000),
   status: { type: 'string', enum: ['planned', 'completed', 'cancelled'], default: 'planned' },
 }
-const cosmetic = obj({ id: uuid, slug: string(), name: string(), description: { type: 'string', nullable: true }, slot: { type: 'string', enum: ['hat', 'outfit', 'accessory'] }, minimumLevel: integer(1, 1000), active: { type: 'boolean' }, imageUrl: nullableURL })
+const cosmetic = obj({ id: uuid, slug: string(), name: string(), description: { type: 'string', nullable: true }, slot: { type: 'string', enum: ['hat', 'outfit', 'accessory', 'background'] }, minimumLevel: integer(1, 1000), coinPrice: integer(), active: { type: 'boolean' }, imageUrl: nullableURL })
 const inventoryFields = { id: uuid, owner: uuid, item: uuid, acquiredAt: timestamp }
 const schemas: Record<string, Schema> = {
   Profile: obj({ id: uuid, ...profileFields, timezone: string(), weeklyGoal: integer(1, 7), createdAt: timestamp }),
   ProfileUpdate: input(profileFields),
   Exercise: input(exerciseFields, ['name']),
   WorkoutInput: input(workoutFields, ['requestId', 'title', 'durationMinutes']),
-  Workout: obj({ id: uuid, ...workoutFields, completedAt: timestamp, localDate: { type: 'string', format: 'date' }, status: { type: 'string', enum: ['completed', 'voided'] }, voidedAt: { ...timestamp, nullable: true } }),
-  WorkoutResult: obj({ workout: ref('Workout'), replayed: { type: 'boolean' } }),
+  Workout: obj({ id: uuid, ...workoutFields, completedAt: timestamp, localDate: { type: 'string', format: 'date' }, status: { type: 'string', enum: ['completed', 'voided'] }, voidedAt: { ...timestamp, nullable: true }, coinReward: { type: 'integer', enum: [0, 10, 50] } }),
+  WorkoutResult: obj({ workout: ref('Workout'), replayed: { type: 'boolean' }, wallet: ref('Wallet') }),
   WorkoutPage: page(ref('Workout')),
   CalendarInput: input(calendarFields, ['title', 'startsAt', 'endsAt', 'timezone']),
   CalendarUpdate: input(calendarFields),
@@ -50,7 +50,12 @@ const schemas: Record<string, Schema> = {
   ShopPage: page({ allOf: [ref('Cosmetic'), obj({ owned: { type: 'boolean' }, unlocked: { type: 'boolean' } })] }, { level: integer(1) }),
   Inventory: obj(inventoryFields),
   InventoryPage: page(obj({ ...inventoryFields, item: { ...cosmetic, nullable: true, description: 'Null if the catalog item is archived or unavailable.' } })),
-  ClaimResult: obj({ inventory: ref('Inventory'), replayed: { type: 'boolean' } }),
+  ClaimResult: obj({ inventory: ref('Inventory'), replayed: { type: 'boolean' }, wallet: ref('Wallet') }),
+  Wallet: obj({ balance: integer(), lifetimeWorkouts: integer() }),
+  CoinPacks: obj({ enabled: { type: 'boolean' }, packs: array(obj({ id: string(), coins: integer(1), amountCents: integer(50), currency: { type: 'string', enum: ['usd'] } })) }),
+  CoinCheckoutInput: input({ packId: string(80), requestId: workoutFields.requestId }, ['packId', 'requestId']),
+  CoinCheckout: obj({ orderId: uuid, url: { type: 'string', format: 'uri' } }),
+  CoinOrder: obj({ id: uuid, status: { type: 'string', enum: ['pending', 'paid'] }, coins: integer(1) }),
   Train: obj({ profile: ref('Profile'), progress: ref('Progress'), recentWorkouts: array(ref('Workout')), upcomingWorkouts: array(ref('CalendarEvent')), news: array(ref('Content')), tutorials: array(ref('Content')) }),
   Error: obj({ error: obj({ code: string(), message: string() }) }),
 }
@@ -94,7 +99,7 @@ export const openapi = {
       get: operation('listWorkouts', 'Workouts', 'List completed workouts', 'WorkoutPage', { parameters: pagination }),
       post: operation('logWorkout', 'Workouts', 'Log a completed workout', 'WorkoutResult', {
         body: 'WorkoutInput', example: { requestId: 'swagger-workout-001', title: 'Upper body', durationMinutes: 30, exercises: [{ name: 'Push-ups', sets: 3, reps: 10 }] },
-        description: 'Use a NEW requestId for each intentional workout. Repeating the same ID and normalized payload safely returns the original record. A changed payload with that ID returns 409. The database assigns owner and completion date/time.',
+        description: 'Use a NEW requestId for each intentional workout. Repeating the same ID and normalized payload safely returns the original record. A changed payload with that ID returns 409. The database assigns owner, completion date/time, and 10 coins per entry (50 total at lifetime entries 25, 50, 75, and 100). Retries never award coins twice. Wallet is included in the response.',
       }),
     },
     '/workouts/{id}': {
@@ -114,7 +119,11 @@ export const openapi = {
       patch: operation('updateCharacter', 'Character', 'Change avatar or equip a cosmetic', 'Character', { body: 'CharacterUpdate', example: { avatar: 'panda', equippedCosmeticId: null }, description: 'Use a cosmetic item ID from the shop, not an inventory row ID. Claim it first. Null unequips.' }),
     },
     '/shop': { get: operation('listShop', 'Shop', 'List active cosmetics with eligibility', 'ShopPage', { parameters: pagination }) },
-    '/shop/{id}/claim': { post: operation('claimCosmetic', 'Shop', 'Claim a level-unlocked cosmetic', 'ClaimResult', { parameters: [idParameter], description: 'No payment or currency. Claims are deduplicated per user/item. Reach minimumLevel first. Already claimed items remain owned after voiding workouts.' }) },
+    '/shop/{id}/claim': { post: operation('claimCosmetic', 'Shop', 'Buy an eligible cosmetic with coins', 'ClaimResult', { parameters: [idParameter], description: 'Charges the catalog coinPrice atomically and returns the updated wallet. Retries for an owned item never charge twice. Minimum level and sufficient funds are enforced in the database.' }) },
+    '/wallet': { get: operation('getWallet', 'Shop', 'Read your coin balance and lifetime entry count', 'Wallet') },
+    '/coins/packs': { get: operation('getCoinPacks', 'Shop', 'List USD coin packs and checkout availability', 'CoinPacks') },
+    '/coins/checkout': { post: operation('createCoinCheckout', 'Shop', 'Start a Stripe hosted checkout', 'CoinCheckout', { body: 'CoinCheckoutInput', description: 'Use a new requestId per intentional purchase, retain it for retries. Price, amount and owner come from a database order. Returns 503 until Stripe is configured. Returning from checkout never credits coins; the verified webhook does.' }) },
+    '/coins/orders/{id}': { get: operation('getCoinOrder', 'Shop', 'Read your payment fulfillment status', 'CoinOrder', { parameters: [idParameter] }) },
     '/inventory': { get: operation('listInventory', 'Shop', 'List owned cosmetics', 'InventoryPage', { parameters: pagination }) },
   },
 }

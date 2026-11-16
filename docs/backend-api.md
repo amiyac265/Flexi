@@ -16,7 +16,7 @@ Updated November 2, 2026. This standalone Next.js app uses Supabase Postgres and
 
 ## Frontend starting point
 
-Use `src/lib/flexi-api.ts`. It has typed methods, attaches the Supabase access token, and normalizes API errors. Call it from browser event handlers/effects; importing it alone does not initialize authentication. The frontend remains owned by the Figma team; the existing `FlexiApp.tsx` demo has **not** been connected to these APIs and still contains local demo XP/workout values.
+Use `src/lib/flexi-api.ts`. It has typed methods, attaches the Supabase access token, and normalizes API errors. Call it from browser event handlers/effects; importing it alone does not initialize authentication. The frontend now loads account progress, wallet and shop ownership through these APIs when signed in. Signed-out use is a separate, explicitly labeled local demo wallet. Demo currency is never transferred into account balances or sold for money.
 
 ```ts
 import { flexiAPI } from '@/lib/flexi-api'
@@ -78,7 +78,7 @@ All paths below begin with `/api/flexi`. Success is HTTP 200 with `{ "data": ...
 | GET | `/character` | Avatar, level, evolution state, preset image path, equipped cosmetic |
 | PATCH | `/character` | `avatar?`, `equippedCosmeticId?`; null unequips |
 | GET | `/shop?page=1&limit=20` | Active cosmetics, each with `owned` and `unlocked` flags; current user level |
-| POST | `/shop/:id/claim` | Claim a level-eligible cosmetic; duplicate claims return existing inventory |
+| POST | `/shop/:id/claim` | Buy a level-eligible cosmetic for its catalog coinPrice; retries never charge twice |
 | GET | `/inventory?page=1&limit=20` | Owned cosmetics, with populated item where still accessible |
 
 Paginated responses contain `docs`, `totalDocs`, `page`, `totalPages`, and `hasNextPage`. Default limit is 20; maximum is 100. Follow `hasNextPage` for complete history, calendar, or inventory. Train deliberately returns a small preview, not all records.
@@ -104,7 +104,7 @@ Example request:
 
 `exercises` is optional and limited to 30 summaries. This release records a completed workout directly; it does not implement live per-set autosave, workout templates, or a start/finish state machine. Duration must be an integer from 1 to 1,440 minutes. The server assigns owner, completion time, and local date. Client-submitted XP, level, owner, completion date, or timestamps are rejected.
 
-POST returns `{ workout, replayed }`. A repeat with the same user/request ID and normalized payload returns the existing record. A different payload with the same ID returns 409. Retrying a voided workout returns its voided state; use a new ID for an intentional replacement. IDs deduplicate within each account.
+POST returns `{ workout, replayed, wallet }`; `workout.coinReward` records the original award. For a replay, show no new reward even though the stored reward remains on the record. A repeat with the same user/request ID and normalized payload returns the existing record. A different payload with the same ID returns 409. Retrying a voided workout returns its voided state; use a new ID for an intentional replacement. IDs deduplicate within each account.
 
 Progress fields:
 
@@ -120,7 +120,7 @@ currentWeekPending, lastWorkoutDate
 - `level = 1 + floor(totalXp / 500)`; level progress is 0–499 XP, not the demo UI's previous 0–99 scale.
 - Weekly streak counts consecutive Monday-start weeks meeting the signup goal. An unfinished current week preserves the streak ending last week. Daily streak is also available for the existing day-streak UI.
 - Void removes workout contribution immediately. If another completed workout remains on that date, its daily XP remains. No separately mutable XP counter exists, so duplicate requests and void retries cannot double-adjust a balance.
-- Already claimed cosmetics stay owned if a workout is later voided. There is no competitive economy, spendable XP, or purchase currency in this release.
+- Already claimed cosmetics stay owned if a workout is later voided. XP and leaderboard points are separate from the spendable coin wallet. See the coin economy below.
 
 Refetch `train`, `progress`, and `character` after logging or voiding; refetch `shop` when eligibility may change. Do not optimistically award fixed XP in the browser: a second same-day log grants none. Persist the current draft/request ID until the request outcome is known.
 
@@ -144,9 +144,9 @@ Overlaps and past entries are allowed for this prototype. Partial edits merge in
 
 Use the existing `bunny`, `panda`, `turtle`, and `deer` characters. Level 5 switches to the existing evolved image. The character endpoint returns the appropriate `/avatars/...` image path.
 
-Cosmetics have a `minimumLevel`. An eligible user can claim an item once and equip it. One cosmetic is equipped at a time in this release; `slot` is descriptive metadata for future layering. The server verifies inventory ownership before equipping. Archiving a catalog item hides it from the shop and character response while retaining the inventory record. Inventory returns `item: null` for an unavailable/archived catalog item; handle that state. Content and cosmetics expose optional `imageUrl` HTTPS strings instead of Payload Media relationships.
+Cosmetics have a `minimumLevel`. An eligible user can buy an item once for its server-controlled `coinPrice` and equip it. Existing cosmetics default to zero cost; existing ownership is preserved. One cosmetic is equipped at a time in this release; `slot` is descriptive metadata for future layering. The server verifies inventory ownership before equipping. Archiving a catalog item hides it from the shop and character response while retaining the inventory record. Inventory returns `item: null` for an unavailable/archived catalog item; handle that state. Content and cosmetics expose optional `imageUrl` HTTPS strings instead of Payload Media relationships.
 
-No card payments, token balance, item trading, currency deduction, or battle pass exists. The button should say “Claim” or “Unlock,” not imply a paid purchase.
+Coin purchases debit the wallet atomically. Paid USD coin packs use Stripe Checkout with verified webhook fulfillment; setup and explicit activation are required. Trading and battle passes remain deferred.
 
 ## Editorial content and catalog
 
@@ -170,3 +170,24 @@ Run `pnpm typecheck`, `pnpm test:backend`, `pnpm test:database`, and `pnpm build
 Use `pnpm smoke:api` after setting up a hosted project and a dedicated test account, as described in the setup guide. Verify signup/email confirmation/login/logout, real persistence after reload, and account isolation there. A successful local build does not mean a cloud database has been provisioned.
 
 The frontend `FlexiApp.tsx` still uses demo personal progress values and is not yet wired to this client. The existing leaderboard display now reads Supabase's editorial `leaderboard_entries`; no live user rankings were added. Friends, friend activity, community competition, battle pass, external news ingestion, notifications, account deletion/export, advanced onboarding/preferences, and mobile health integrations remain future work.
+
+
+## Coin economy
+
+Apply `20261116000000_coin_economy.sql` after the core migration. It adds wallets, an append-only audit ledger, price columns, a six-item shop catalog, USD coin packs and immutable payment orders.
+
+| Method | Path | Contract |
+| --- | --- | --- |
+| GET | `/wallet` | `{ balance, lifetimeWorkouts }`, account private |
+| GET | `/coins/packs` | `{ enabled, packs: [{ id, coins, amountCents, currency }] }` |
+| POST | `/coins/checkout` | `{ packId, requestId }` → `{ orderId, url }`; 503 until configured |
+| GET | `/coins/orders/:id` | Owned order `{ id, status: 'pending' \| 'paid', coins }` |
+| POST | `/shop/:id/claim` | Returns `{ inventory, replayed, wallet }`, debits authoritative `coinPrice` exactly once |
+
+A new workout entry earns **10 coins**, or **50 total** at lifetime entry ordinals **25, 50, 75 and 100**. Entry 125 and later multiples are ordinary 10-coin entries. Same-day entries each earn coins, independently of daily XP. Reusing a workout request ID never awards again. Voiding preserves already-earned coins and its lifetime ordinal; replacements get a new ordinal. The completed-workout count may therefore differ from `lifetimeWorkouts`. This avoids negative wallets after spent rewards and repeating milestones by voiding. Existing completed entries are backfilled in completion-time/ID order; previously voided entries occupy ordinals but are not retroactively rewarded.
+
+The database serializes reward, cosmetic purchase and payment writes using a per-profile lock. Apps cannot directly modify balances, rewards, ownership, order amounts or paid status. Paid orders snapshot coin quantity, USD amount and owner. Duplicate webhook deliveries return the previous fulfillment and do not add more coins. A session cannot fulfill multiple orders. App APIs always use the publishable key plus the authenticated user's bearer token; only the separate, signed-payment Edge Function may call the service-role-only fulfillment RPC.
+
+The client retains an uncertain workout's request ID and payload for retry, refreshes account data after saving, and displays reward feedback only for a new record. Local demo actions are stored on that browser only and never credited to signed-in accounts. Purchases do not grant XP or leaderboard points.
+
+See [coin-payments.md](coin-payments.md) for payment activation, test cases and current refund limitations.

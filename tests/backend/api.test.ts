@@ -6,7 +6,7 @@ import { databaseError } from '../../src/backend/data.ts'
 import type { Database, ProfileRow } from '../../src/backend/database.types.ts'
 const id = '00000000-0000-4000-8000-000000000001'
 const profile: ProfileRow = { id, display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, created_at: '2026-11-02T12:00:00Z' }
-const workout = { id, owner: id, request_id: 'request-1234', title: 'Gym', duration_minutes: 30, notes: '', exercises: [], status: 'completed', local_date: '2026-11-02', completed_at: '2026-11-02T12:00:00Z', voided_at: null }
+const workout = { id, owner: id, request_id: 'request-1234', title: 'Gym', duration_minutes: 30, notes: '', exercises: [], status: 'completed', local_date: '2026-11-02', completed_at: '2026-11-02T12:00:00Z', voided_at: null, coin_reward: 10 }
 function request(path: string, method = 'GET', body?: unknown) {
   return new Request(`http://localhost/api/flexi/${path}`, { method, ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
 }
@@ -16,8 +16,8 @@ function context(fetcher: typeof fetch, p = profile): APIContext {
 const neverFetch: typeof fetch = async () => { throw new Error('Unexpected database request') }
 const run = (req: Request, ctx = context(neverFetch)) => handleAPI(req, new URL(req.url).pathname.split('/').slice(3), async () => ctx)
 
-test('all 18 routes require a bearer token; cookies alone are not authentication', async () => {
-  const routes = [['profile','GET'],['profile','PATCH'],['progress','GET'],['train','GET'],['content','GET'],['workouts','GET'],[`workouts/${id}`,'GET'],['workouts','POST'],[`workouts/${id}`,'DELETE'],['calendar','GET'],['calendar','POST'],[`calendar/${id}`,'PATCH'],[`calendar/${id}`,'DELETE'],['character','GET'],['character','PATCH'],['shop','GET'],['inventory','GET'],[`shop/${id}/claim`,'POST']]
+test('all routes require a bearer token; cookies alone are not authentication', async () => {
+  const routes = [['profile','GET'],['profile','PATCH'],['progress','GET'],['train','GET'],['content','GET'],['workouts','GET'],[`workouts/${id}`,'GET'],['workouts','POST'],[`workouts/${id}`,'DELETE'],['calendar','GET'],['calendar','POST'],[`calendar/${id}`,'PATCH'],[`calendar/${id}`,'DELETE'],['character','GET'],['character','PATCH'],['shop','GET'],['inventory','GET'],[`shop/${id}/claim`,'POST'],['wallet','GET'],['coins/packs','GET'],['coins/checkout','POST'],[`coins/orders/${id}`,'GET']]
   for (const [path, method] of routes) {
     const req = request(path, method)
     req.headers.set('Cookie', 'fake-session=admin')
@@ -42,6 +42,7 @@ test('workout HTTP contract normalizes input, uses RPC and hides internal fields
   let calls = 0
   const ctx = context(async (url, init) => {
     calls++
+    if (String(url).endsWith('/rpc/flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
     assert.match(String(url), /rpc\/flexi_log_workout$/)
     const body = JSON.parse(String(init?.body))
     assert.deepEqual(body.p_input, { requestId: 'request-1234', title: 'Gym', durationMinutes: 30, exercises: [] })
@@ -51,13 +52,14 @@ test('workout HTTP contract normalizes input, uses RPC and hides internal fields
   assert.equal(response.status, 200)
   const result = (await response.json()).data
   assert.equal(result.replayed, true)
+  assert.deepEqual(result.wallet, { balance: 10, lifetimeWorkouts: 1 })
   assert.equal(result.workout.durationMinutes, 30)
   assert.equal(result.workout.owner, undefined)
   assert.equal(result.workout.completion_input, undefined)
-  assert.equal(calls, 1)
+  assert.equal(calls, 2)
 })
 test('bad inputs are rejected before calling Supabase', async () => {
-  for (const extra of [{ owner: id }, { xp: 9999 }, { completedAt: '2000-01-01' }]) {
+  for (const extra of [{ owner: id }, { xp: 9999 }, { coins: 9999 }, { coinReward: 50 }, { completedAt: '2000-01-01' }]) {
     assert.equal((await run(request('workouts', 'POST', { requestId: 'request-1234', title: 'Gym', durationMinutes: 30, ...extra }))).status, 400)
   }
   assert.equal((await run(request('profile', 'PATCH', { weeklyGoal: 1 }))).status, 400)
@@ -127,4 +129,33 @@ test('authentication verifies the bearer token with Supabase before reading a pr
   await assert.rejects(authenticate(new Request('http://localhost', { headers: { Authorization: 'Bearer rejected-token' } })), /session expired/)
   assert.equal(calls.length, 1)
   assert.match(calls[0], /auth\/v1\/user$/)
+})
+
+test('coin wallet uses the authenticated RPC and remains no-store', async () => {
+  const ctx = context(async url => {
+    assert.match(String(url), /rpc\/flexi_wallet$/)
+    return Response.json({ balance: 340, lifetimeWorkouts: 26 })
+  })
+  const response = await run(request('wallet'), ctx)
+  assert.equal(response.status, 200)
+  assert.match(response.headers.get('cache-control')!, /no-store/)
+  assert.deepEqual((await response.json()).data, { balance: 340, lifetimeWorkouts: 26 })
+})
+
+test('checkout rejects client-supplied amounts and rewards before database writes', async () => {
+  for (const extra of [{ coins: 99999 }, { amountCents: 1 }, { owner: id }, { url: 'https://attacker.example' }]) {
+    const response = await run(request('coins/checkout', 'POST', { packId: 'pocket', requestId: 'checkout-test-123', ...extra }))
+    assert.equal(response.status, 400)
+  }
+})
+
+test('coin pack listing returns public pricing without exposing provider credentials', async () => {
+  const ctx = context(async url => {
+    assert.match(String(url), /coin_packs\?/)
+    return Response.json([{ id: 'pocket', coins: 100, amount_cents: 99, currency: 'usd', active: true }])
+  })
+  const response = await run(request('coins/packs'), ctx)
+  const data = (await response.json()).data
+  assert.equal(typeof data.enabled, 'boolean')
+  assert.deepEqual(data.packs, [{ id: 'pocket', coins: 100, amountCents: 99, currency: 'usd' }])
 })

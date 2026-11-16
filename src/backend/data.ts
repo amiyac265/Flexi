@@ -3,10 +3,10 @@ import { BackendError, calculateProgress } from './domain.ts'
 import type { Database, ProfileRow, WorkoutRow, CalendarRow, ContentRow, CosmeticRow, InventoryRow } from './database.types.ts'
 export type DB = SupabaseClient<Database>
 export const profileDTO = (p: ProfileRow) => ({ id: p.id, displayName: p.display_name, avatar: p.avatar, timezone: p.timezone, weeklyGoal: p.weekly_goal, createdAt: p.created_at })
-export const workoutDTO = (w: WorkoutRow) => ({ id: w.id, requestId: w.request_id, title: w.title, durationMinutes: w.duration_minutes, notes: w.notes, exercises: w.exercises, completedAt: w.completed_at, localDate: w.local_date, status: w.status, voidedAt: w.voided_at })
+export const workoutDTO = (w: WorkoutRow) => ({ id: w.id, requestId: w.request_id, title: w.title, durationMinutes: w.duration_minutes, notes: w.notes, exercises: w.exercises, completedAt: w.completed_at, localDate: w.local_date, status: w.status, voidedAt: w.voided_at, coinReward: w.coin_reward ?? 0 })
 export const calendarDTO = (e: CalendarRow) => ({ id: e.id, owner: e.owner, title: e.title, startsAt: e.starts_at, endsAt: e.ends_at, timezone: e.timezone, notes: e.notes, status: e.status, createdAt: e.created_at })
 export const contentDTO = (c: ContentRow) => ({ id: c.id, slug: c.slug, title: c.title, kind: c.kind, summary: c.summary, body: c.body, sourceUrl: c.source_url, imageUrl: c.image_url, publishedAt: c.published_at })
-export const cosmeticDTO = (c: CosmeticRow) => ({ id: c.id, slug: c.slug, name: c.name, description: c.description, slot: c.slot, minimumLevel: c.minimum_level, active: c.active, imageUrl: c.image_url })
+export const cosmeticDTO = (c: CosmeticRow) => ({ id: c.id, slug: c.slug, name: c.name, description: c.description, slot: c.slot, minimumLevel: c.minimum_level, coinPrice: c.coin_price, active: c.active, imageUrl: c.image_url })
 export const inventoryDTO = (i: InventoryRow) => ({ id: i.id, owner: i.owner, item: i.item, acquiredAt: i.acquired_at })
 export type UserProfile = ReturnType<typeof profileDTO>
 export type WorkoutLog = ReturnType<typeof workoutDTO>

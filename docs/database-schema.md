@@ -45,3 +45,8 @@ Indexes cover `(owner, completed_at, id)` history, completed `(owner, local_date
 Deleting an Auth user through administrative tooling cascades to their profile and personal rows. There is no user-facing account deletion endpoint yet. Workouts are voided, calendar entries cancelled, and catalogs archived instead of deleting history. Catalog item deletion is restricted while inventory references exist. Editable goals/timezones will need effective-dated rules in a later migration.
 
 Apply future schema changes through new migrations after reviewing existing data. This initial migration has only been applied to isolated test databases, not a hosted project.
+
+
+## Coin economy migration
+
+`20261116000000_coin_economy.sql` adds `coin_wallets` (private balance and lifetime workout-entry ordinal), `coin_ledger` (unique owner/source/reference audit records), `coin_packs` (USD server catalog), and `coin_orders` (owner/request identity, immutable price snapshot, unique paid Checkout session). Cosmetic `coin_price` defaults to zero; workouts gain an immutable original `coin_reward`. App roles have SELECT only under RLS. Reward triggers and purchase RPCs atomically mutate the ledger/wallet under the profile lock. Payment fulfillment is service-role-only and called solely from the separate Stripe-verified Edge Function. Backgrounds are now an allowed cosmetic slot. No existing data or inventory is deleted.

@@ -27,3 +27,7 @@ minimum_password_length = 8
 [auth.email]
 enable_signup = true
 enable_confirmations = true
+
+# Stripe authenticates this endpoint using the signed raw body, not a Supabase JWT.
+[functions.coin-payments]
+verify_jwt = false

@@ -13,10 +13,13 @@ try {
     grant usage on schema public, auth to anon, authenticated;
     grant execute on function auth.uid() to anon, authenticated;`)
   for (const file of readdirSync(join(root, 'supabase/migrations')).filter(f => f.endsWith('.sql')).sort()) {
+    if (file === '20261116000000_coin_economy.sql') await db.exec(readFileSync(join(root, 'tests/database/coin-backfill-before.sql'), 'utf8'))
     await db.exec(readFileSync(join(root, 'supabase/migrations', file), 'utf8'))
+    if (file === '20261116000000_coin_economy.sql') { await db.exec(readFileSync(join(root, 'tests/database/coin-backfill-after.sql'), 'utf8')); console.log('PASS: historical coin migration backfill and retries') }
     console.log(`PASS: applied ${file}`)
   }
-  const results = await db.exec(readFileSync(join(root, 'tests/database/security.sql'), 'utf8'))
+  const results = []
+  for (const file of ['security.sql', 'coins.sql']) results.push(...await db.exec(readFileSync(join(root, 'tests/database', file), 'utf8')))
   let checks = 0
   for (const result of results) for (const row of result.rows) for (const value of Object.values(row)) {
     if (typeof value === 'string' && value.startsWith('PASS:')) { console.log(value); checks++ }

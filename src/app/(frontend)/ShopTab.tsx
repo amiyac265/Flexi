@@ -2,16 +2,18 @@
 
 import { useState } from 'react'
 import './shop.css'
+import { CoinPacksDialog } from './EconomyDialogs'
+import type { useCoinEconomy } from './useCoinEconomy'
 
 type Category = 'All' | 'Clothing' | 'Accessories' | 'Backgrounds'
-type Item = { id: string; name: string; category: Exclude<Category, 'All'>; price: number; color: string; kind: 'shirt' | 'bottle' | 'mat' | 'cap' | 'scene'; tag?: string }
-const items: Item[] = [
-  { id: 'tee', name: 'Everyday training tee', category: 'Clothing', price: 120, color: '#7d6b91', kind: 'shirt', tag: 'FAN FAVORITE' },
-  { id: 'bottle', name: 'Hydration buddy', category: 'Accessories', price: 80, color: '#00a99a', kind: 'bottle' },
-  { id: 'cap', name: 'Off-duty cap', category: 'Clothing', price: 100, color: '#4e721d', kind: 'cap' },
-  { id: 'mat', name: 'Find your flow mat', category: 'Accessories', price: 150, color: '#a38ab9', kind: 'mat' },
-  { id: 'garden', name: 'Garden escape', category: 'Backgrounds', price: 200, color: '#b9cda1', kind: 'scene', tag: 'A LITTLE ZEN' },
-  { id: 'sunset', name: 'Golden hour', category: 'Backgrounds', price: 200, color: '#e9b191', kind: 'scene' },
+type Item = { id: string; catalogId: string; name: string; category: Exclude<Category, 'All'>; price: number; color: string; kind: 'shirt' | 'bottle' | 'mat' | 'cap' | 'scene'; tag?: string }
+const catalogLooks: Item[] = [
+  { id: 'tee', catalogId: '10000000-0000-4000-8000-000000000001', name: 'Everyday training tee', category: 'Clothing', price: 120, color: '#7d6b91', kind: 'shirt', tag: 'FAN FAVORITE' },
+  { id: 'bottle', catalogId: '10000000-0000-4000-8000-000000000002', name: 'Hydration buddy', category: 'Accessories', price: 80, color: '#00a99a', kind: 'bottle' },
+  { id: 'cap', catalogId: '10000000-0000-4000-8000-000000000003', name: 'Off-duty cap', category: 'Clothing', price: 100, color: '#4e721d', kind: 'cap' },
+  { id: 'mat', catalogId: '10000000-0000-4000-8000-000000000004', name: 'Find your flow mat', category: 'Accessories', price: 150, color: '#a38ab9', kind: 'mat' },
+  { id: 'garden', catalogId: '10000000-0000-4000-8000-000000000005', name: 'Garden escape', category: 'Backgrounds', price: 200, color: '#b9cda1', kind: 'scene', tag: 'A LITTLE ZEN' },
+  { id: 'sunset', catalogId: '10000000-0000-4000-8000-000000000006', name: 'Golden hour', category: 'Backgrounds', price: 200, color: '#e9b191', kind: 'scene' },
 ]
 
 function ItemArt({ item }: { item: Item }) {
@@ -27,12 +29,19 @@ function ItemArt({ item }: { item: Item }) {
   </svg>
 }
 
-export default function ShopTab({ avatar, evolved }: { avatar: string; evolved: boolean }) {
+export default function ShopTab({ avatar, evolved, economy, onSignIn }: { avatar: string; evolved: boolean; economy: ReturnType<typeof useCoinEconomy>; onSignIn: () => void }) {
   const [view, setView] = useState<'shop' | 'closet'>('shop')
   const [category, setCategory] = useState<Category>('All')
-  const [inventory, setInventory] = useState<{ coins: number; owned: string[] }>({ coins: 500, owned: [] })
-  const { coins, owned } = inventory
-  const [selected, setSelected] = useState<Item>(items[0])
+  const { coins, owned } = economy
+  const items = catalogLooks.map(item => {
+    const live = economy.catalog.find(value => value.id === item.catalogId)
+    return live ? { ...item, price: live.coinPrice } : item
+  })
+  const [selectedId, setSelectedId] = useState('tee')
+  const selected = items.find(item => item.id === selectedId) ?? items[0]
+  const liveItem = economy.catalog.find(item => item.id === selected.catalogId)
+  const available = !economy.userId || Boolean(liveItem?.unlocked)
+  const [showCoins, setShowCoins] = useState(false)
   const [message, setMessage] = useState('')
   const [wearingTee, setWearingTee] = useState(false)
   const [tryingOn, setTryingOn] = useState(true)
@@ -41,16 +50,17 @@ export default function ShopTab({ avatar, evolved }: { avatar: string; evolved: 
   const previewTee = teeAvailable && (tryingOn ? selected.id === 'tee' || wearingTee : wearingTee)
   const previewBackground = tryingOn && selected.category === 'Backgrounds' ? selected.id : background
   const avatarSrc = previewTee ? '/avatars/outfits/bunny-starter-tee.png' : `/avatars/${avatar}-${evolved ? 'evolved' : 'starter'}.png`
-  const filtered = items.filter(item => (category === 'All' || item.category === category) && (view === 'shop' || owned.includes(item.id)))
-  const isOwned = owned.includes(selected.id)
+  const filtered = items.filter(item => (category === 'All' || item.category === category) && (view === 'shop' || owned.includes(item.catalogId)))
+  const isOwned = owned.includes(selected.catalogId)
   const affordable = coins >= selected.price
   const canWear = selected.id === 'tee' && teeAvailable
   const equipped = canWear ? wearingTee : selected.category === 'Backgrounds' && background === selected.id
-  const selectItem = (item: Item) => { setSelected(item); setTryingOn(true); setMessage('') }
-  const purchase = () => {
-    if (isOwned || !affordable) return
-    setInventory(current => current.owned.includes(selected.id) || current.coins < selected.price ? current : ({ coins: current.coins - selected.price, owned: [...current.owned, selected.id] }))
-    setMessage(`${selected.name} is in your closet. Nice find!`)
+  const selectItem = (item: Item) => { setSelectedId(item.id); setTryingOn(true); setMessage('') }
+  const purchase = async () => {
+    if (isOwned || !affordable || !available) return
+    setMessage('')
+    try { await economy.purchase(selected.catalogId, selected.price); setMessage(`${selected.name} is in your closet. Nice find!`) }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to buy this item. Please retry.') }
   }
   const applyItem = () => {
     if (!isOwned) return
@@ -60,17 +70,18 @@ export default function ShopTab({ avatar, evolved }: { avatar: string; evolved: 
     setMessage(equipped && canWear ? 'Back to the original look.' : 'Looking good! Your dressing room look is updated.')
   }
   return <section className="shop-page">
-    <div className="shop-heading"><div><span className="eyebrow">THE FLEXI SHOP</span><h1>Style your Flexi.</h1><p>Your buddy. Your look. Your next chapter.</p></div><div className="coin-wallet"><span aria-hidden="true">✦</span><div><b>{coins.toLocaleString()}</b><small>Demo coins</small></div></div></div>
+    <div className="shop-heading"><div><span className="eyebrow">THE FLEXI SHOP</span><h1>Style your Flexi.</h1><p>Your buddy. Your look. Your next chapter.</p></div><div className="shop-wallet-actions"><div className="coin-wallet"><span aria-hidden="true">✦</span><div><b>{coins.toLocaleString()}</b><small>{economy.userId ? 'Your coins' : 'Demo coins'}</small></div></div><button className="add-coins-button" onClick={() => setShowCoins(true)}>+ Get coins</button></div></div>
     <div className={`dressing-stage ${previewBackground === 'sunset' ? 'sunset-stage' : ''}`}>
       <div className="dressing-stage-label"><span className="eyebrow">YOUR AVATAR</span><h2>A little more you.</h2><p>Small upgrades. Big personality.</p></div>
       <span className="dressing-orbit" aria-hidden="true" /><span className="dressing-star star-one" aria-hidden="true">✦</span><span className="dressing-star star-two" aria-hidden="true">✧</span><div className="dressing-avatar"><img src={avatarSrc} alt={previewTee ? "Pip wearing the fitted lavender training tee" : "Your avatar in the dressing room"} /></div>
       <div className="dressing-caption"><span className="preview-dot" />{tryingOn && (canWear || selected.category === 'Backgrounds') ? 'Trying a fresh look' : 'Your dressing room look'}<button onClick={() => { setTryingOn(false); setMessage('Showing your current look.') }}>Reset preview ↺</button></div>
       <span className="dressing-floor" aria-hidden="true" />
     </div>
-    <div className="shop-layout dressing-layout"><div className="shop-catalog"><div className="shop-section-heading"><div className="shop-view-tabs" aria-label="Collection">{(['shop', 'closet'] as const).map(value => <button key={value} aria-pressed={view === value} className={view === value ? 'selected' : ''} onClick={() => { setView(value); setCategory('All'); setMessage('') }}>{value === 'shop' ? 'Discover' : `My closet (${owned.length})`}</button>)}</div><span>{filtered.length} items</span></div>
+    <div className="shop-earn-note"><span aria-hidden="true">✦</span><span><b>Every workout is worth it.</b> Earn 10 coins per entry. Your 25th, 50th, 75th & 100th earn 50 coins each.</span></div><div className="shop-layout dressing-layout"><div className="shop-catalog"><div className="shop-section-heading"><div className="shop-view-tabs" aria-label="Collection">{(['shop', 'closet'] as const).map(value => <button key={value} aria-pressed={view === value} className={view === value ? 'selected' : ''} onClick={() => { setView(value); setCategory('All'); setMessage('') }}>{value === 'shop' ? 'Discover' : `My closet (${owned.length})`}</button>)}</div><span>{filtered.length} items</span></div>
       <div className="shop-filters" aria-label="Filter items">{(['All', 'Clothing', 'Accessories', 'Backgrounds'] as const).map(value => <button key={value} aria-pressed={category === value} className={category === value ? 'selected' : ''} onClick={() => setCategory(value)}>{value}</button>)}</div>
-      <div className="shop-grid">{filtered.map(item => <button key={item.id} className={`shop-product ${selected.id === item.id ? 'selected' : ''}`} aria-pressed={selected.id === item.id} onClick={() => selectItem(item)}><div className={`shop-product-image ${item.kind === 'scene' ? 'scenery' : ''}`}>{item.tag && <span className="product-tag">{item.tag}</span>}<>{item.id === 'tee' && teeAvailable ? <img className="shop-fitted-thumbnail" src="/avatars/outfits/bunny-starter-tee.png" alt="Pip wearing the training tee" /> : <ItemArt item={item} />}</><span className="product-preview" aria-hidden="true">{selected.id === item.id ? '✓' : '+'}</span></div><div className="shop-product-info"><small>{item.category}</small><h3>{item.name}</h3><b>{owned.includes(item.id) ? '✓ Owned' : `✦ ${item.price}`}</b></div></button>)}</div>
+      <div className="shop-grid">{filtered.map(item => <button key={item.id} className={`shop-product ${selected.id === item.id ? 'selected' : ''}`} aria-pressed={selected.id === item.id} onClick={() => selectItem(item)}><div className={`shop-product-image ${item.kind === 'scene' ? 'scenery' : ''}`}>{item.tag && <span className="product-tag">{item.tag}</span>}<>{item.id === 'tee' && teeAvailable ? <img className="shop-fitted-thumbnail" src="/avatars/outfits/bunny-starter-tee.png" alt="Pip wearing the training tee" /> : <ItemArt item={item} />}</><span className="product-preview" aria-hidden="true">{selected.id === item.id ? '✓' : '+'}</span></div><div className="shop-product-info"><small>{item.category}</small><h3>{item.name}</h3><b>{owned.includes(item.catalogId) ? '✓ Owned' : `✦ ${item.price}`}</b></div></button>)}</div>
       {filtered.length === 0 && <div className="shop-empty"><span aria-hidden="true">✧</span><h3>Your next favorite is waiting.</h3><p>{owned.length ? 'No owned items in this category yet.' : 'Find something you love and add it to your closet.'}</p><button onClick={() => { setView('shop'); setCategory('All') }}>Explore the shop →</button></div>}
-    </div><aside className="shop-detail" aria-label="Selected item"><span className="eyebrow">THE LITTLE DETAILS</span><div className="shop-detail-art">{canWear ? <img className="shop-fitted-thumbnail" src="/avatars/outfits/bunny-starter-tee.png" alt="Fitted lavender tee on Pip" /> : <ItemArt item={selected} />}</div><small>{selected.category}</small><h2>{selected.name}</h2><p>{selected.category === 'Backgrounds' ? 'A fresh setting for your workout buddy’s next adventure.' : selected.category === 'Clothing' ? 'A new look for showing up and feeling good.' : 'A little extra personality for every training day.'}</p><span className="shop-fit-note">{canWear ? '✓ Tailored for starter Pip' : selected.category === 'Backgrounds' ? '↗ Preview it in your dressing room' : 'Item preview · Fitted artwork coming soon'}</span><div className="shop-price"><span>{isOwned ? 'In your closet' : 'Item price'}</span><b>✦ {selected.price}</b></div><button className="primary shop-buy" disabled={isOwned || !affordable} onClick={purchase}>{isOwned ? '✓ Added to closet' : affordable ? `Get for ${selected.price} coins` : 'Not enough coins'}</button>{isOwned && (canWear || selected.category === 'Backgrounds') && <button className="shop-wear" onClick={applyItem}>{equipped ? canWear ? 'Remove tee' : '✓ Background applied' : canWear ? 'Wear this look' : 'Use this background'}</button>}<p className="shop-notice">Demo mode · Your coins and closet reset on refresh.</p><div className="shop-feedback" role="status">{message}</div></aside></div>
+    </div><aside className="shop-detail" aria-label="Selected item"><span className="eyebrow">THE LITTLE DETAILS</span><div className="shop-detail-art">{canWear ? <img className="shop-fitted-thumbnail" src="/avatars/outfits/bunny-starter-tee.png" alt="Fitted lavender tee on Pip" /> : <ItemArt item={selected} />}</div><small>{selected.category}</small><h2>{selected.name}</h2><p>{selected.category === 'Backgrounds' ? 'A fresh setting for your workout buddy’s next adventure.' : selected.category === 'Clothing' ? 'A new look for showing up and feeling good.' : 'A little extra personality for every training day.'}</p><span className="shop-fit-note">{canWear ? '✓ Tailored for starter Pip' : selected.category === 'Backgrounds' ? '↗ Preview it in your dressing room' : 'Item preview · Fitted artwork coming soon'}</span><div className="shop-price"><span>{isOwned ? 'In your closet' : 'Item price'}</span><b>✦ {selected.price}</b></div><button className="primary shop-buy" disabled={!economy.ready || economy.busy || isOwned || !affordable || !available} onClick={() => { void purchase() }}>{economy.busy ? 'Please wait…' : isOwned ? '✓ Added to closet' : !available ? 'Currently unavailable' : affordable ? `Get for ${selected.price} coins` : 'Not enough coins'}</button>{isOwned && (canWear || selected.category === 'Backgrounds') && <button className="shop-wear" onClick={applyItem}>{equipped ? canWear ? 'Remove tee' : '✓ Background applied' : canWear ? 'Wear this look' : 'Use this background'}</button>}<p className="shop-notice">{economy.userId ? 'Your coins and closet are saved to your account.' : 'Demo wallet · Saved on this device. Sign in for an account wallet.'}</p><div className="shop-feedback" role="status">{message}</div></aside></div>
+    {showCoins && <CoinPacksDialog signedIn={Boolean(economy.userId)} onClose={() => setShowCoins(false)} onSignIn={() => { setShowCoins(false); onSignIn() }} />}
   </section>
 }

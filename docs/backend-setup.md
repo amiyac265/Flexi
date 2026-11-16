@@ -101,3 +101,10 @@ pnpm build
 - `test:database` executes the actual migration, RLS, constraints, and functions in embedded PostgreSQL (PGlite), with a minimal Supabase Auth schema stand-in. It does not test Supabase's hosted Auth/email/PostgREST service.
 - Optional `pnpm test:database:native` uses installed `initdb`, `pg_ctl`, and `psql` to create a new disposable local cluster, run the same SQL checks, and test simultaneous requests over eight connections. It never uses a hosted connection. This check was blocked here by the execution sandbox's shared-memory restriction; PGlite serializes queued requests and cannot prove true connection races.
 - Social interactions/rankings, external news ingestion, payments, battle passes, reminders, and advanced scheduling are deferred. News is editor-managed, not a live external feed.
+
+
+## Workout coins and paid coin packs
+
+Apply all versioned migrations in order, including `20261116000000_coin_economy.sql`. The new migration preserves owned cosmetics and backfills eligible completed workout coins. Do not reapply or edit applied migrations. The wallet starts at zero for new accounts. Sign in through the app header to use account wallets; signed-out usage is a distinct local demo.
+
+Real-money checkout is disabled by default. Follow [coin-payments.md](coin-payments.md) to configure Stripe and deploy the signed webhook before activating payments. No hosted database or payment processor is provisioned by this repository.

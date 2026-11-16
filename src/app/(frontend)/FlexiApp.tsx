@@ -2,6 +2,10 @@
 
 import { useMemo, useRef, useState } from 'react'
 import ShopTab from './ShopTab'
+import { useCoinEconomy } from './useCoinEconomy'
+import { AccountDialog, WorkoutDialog } from './EconomyDialogs'
+import { flexiAPI } from '@/lib/flexi-api'
+import { COIN_MILESTONES } from '@/lib/coin-economy'
 
 const avatars = [
   { name: 'Pip', animal: 'Bunny', key: 'bunny', trait: 'Quick starter' },
@@ -40,50 +44,55 @@ function AvatarArt({ avatar, evolved = false }: { avatar: string; evolved?: bool
 }
 
 export default function FlexiApp({ players }: { players: LeaderboardPlayer[] }) {
-  const [avatarIndex] = useState(0)
+  const economy = useCoinEconomy()
+  const [showAccount, setShowAccount] = useState(false)
+  const [showWorkout, setShowWorkout] = useState(false)
   const [tab, setTab] = useState<'home' | 'leaderboard' | 'profile' | 'shop'>('home')
-  const [xp, setXp] = useState(68)
-  const [level, setLevel] = useState(4)
-  const [workouts, setWorkouts] = useState(12)
-  const [points, setPoints] = useState(752)
+  const workouts = economy.workouts
+  const xpMax = economy.userId ? 500 : 100
+  const xp = economy.train?.progress.xpIntoLevel ?? (workouts * 16) % 100
+  const level = economy.train?.progress.level ?? 1 + Math.floor(workouts * 16 / 100)
+  const points = economy.train?.progress.totalXp ?? workouts * 24
+  const dailyStreak = economy.train?.progress.dailyStreak ?? (workouts ? 1 : 0)
   const [feedback, setFeedback] = useState<'idle' | 'workout' | 'levelup'>('idle')
   const [rankMessage, setRankMessage] = useState('')
   const timer = useRef<number | undefined>(undefined)
-  const avatar = avatars[avatarIndex]
+  const avatar = avatars.find(value => value.key === economy.train?.profile.avatar) ?? avatars[0]
+  const nextMilestone = COIN_MILESTONES.find(value => value > economy.lifetimeWorkouts)
   const evolved = level >= 5
 
   const ranked = useMemo(() => {
-    const current: LeaderboardPlayer & { current: true } = { id: 'you', name: 'You', handle: 'flexi.athlete', points, workouts, streak: 6, avatar: avatar.key, current: true }
+    const current: LeaderboardPlayer & { current: true } = { id: 'you', name: 'You', handle: 'flexi.athlete', points, workouts, streak: dailyStreak, avatar: avatar.key, current: true }
     return [...players, current].sort((a, b) => b.points - a.points)
-  }, [players, points, workouts, avatar.key])
+  }, [players, points, workouts, dailyStreak, avatar.key])
   const rank = ranked.findIndex((player) => player.id === 'you') + 1
 
-  const addWorkout = () => {
-    const oldRank = rank
-    const nextXp = xp + 16
-    const leveledUp = nextXp >= 100
-    const nextPoints = points + 24
-    const nextRank = [...players, { points: nextPoints }].sort((a, b) => b.points - a.points).findIndex((player) => 'points' in player && player.points === nextPoints) + 1
-    setXp(leveledUp ? nextXp - 100 : nextXp)
-    if (leveledUp) setLevel((value) => value + 1)
-    setPoints(nextPoints)
-    setWorkouts((value) => value + 1)
-    setRankMessage(nextRank < oldRank ? `You moved up to #${nextRank}!` : 'Workout logged · +24 points')
+  const addWorkout = async (input: { title: string; durationMinutes: number }) => {
+    const result = await economy.logWorkout(input)
+    setShowWorkout(false)
+    setRankMessage(result.coins === 50 ? `Workout ${result.ordinal} milestone! +50 coins ✦` : result.coins ? `Workout saved · +${result.coins} coins ✦` : 'Workout already saved · Wallet refreshed')
     setFeedback('idle')
-    requestAnimationFrame(() => setFeedback(leveledUp ? 'levelup' : 'workout'))
+    requestAnimationFrame(() => setFeedback('workout'))
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => { setFeedback('idle'); setRankMessage('') }, 2200)
+    timer.current = window.setTimeout(() => { setFeedback('idle'); setRankMessage('') }, 3500)
   }
 
   return <div className="app-shell">
-    <header className="topbar"><Brand /><button className="mini-profile" onClick={() => setTab('profile')}><AvatarArt avatar={avatar.key} /></button></header>
-    {rankMessage && <div className="rank-toast"><Icon name="trophy" />{rankMessage}</div>}
+    <header className="topbar"><Brand /><div className="topbar-account"><button className="header-coins" onClick={() => setTab('shop')}>✦ {economy.coins.toLocaleString()}<span> coins</span></button><button className="economy-link" onClick={() => { if (economy.userId) void flexiAPI.logout().catch(() => setRankMessage('Unable to sign out. Please retry.')); else setShowAccount(true) }}>{economy.userId ? 'Sign out' : 'Sign in'}</button><button className="mini-profile" onClick={() => setTab('profile')}><AvatarArt avatar={avatar.key} /></button></div></header>
+    {rankMessage && <div className="rank-toast" role="status"><Icon name="trophy" />{rankMessage}</div>}
     <main className="tab-content">
-      <div hidden={tab !== 'shop'}><ShopTab avatar={avatar.key} evolved={evolved} /></div>
-      {tab === 'home' && <HomeTab avatar={avatar} evolved={evolved} level={level} xp={xp} workouts={workouts} points={points} feedback={feedback} rank={rank} onWorkout={addWorkout} />}
+      {economy.error && <div className="economy-alert" role="alert">{economy.error}<button onClick={() => { void economy.refresh() }}>Retry</button></div>}
+      {economy.paymentMessage && <div className="economy-alert" role="status">{economy.paymentMessage}{economy.pendingOrder && <button onClick={() => { void economy.checkPayment(economy.pendingOrder!) }}>Check payment</button>}</div>}
+      {!economy.ready && !economy.error && <p role="status">Loading your wallet…</p>}
+      {tab === 'home' && <section className="workout-wallet"><div><span className="eyebrow">YOUR COIN WALLET</span><h2>✦ {economy.coins.toLocaleString()} coins</h2><p>Earn 10 coins per workout. Entries 25, 50, 75 & 100 earn 50 coins each.</p><small>{economy.userId ? 'Saved to your account' : 'Demo wallet · Saved on this device'}</small></div><div>{nextMilestone ? <><b>{economy.lifetimeWorkouts} / {nextMilestone}</b><span>Next 50-coin milestone</span></> : <><b>All four milestones earned!</b><span>Keep going for 10 coins per entry.</span></>}<button onClick={() => setTab('shop')}>Visit the shop ↗</button></div></section>}
+
+      <div hidden={tab !== 'shop'}><ShopTab key={economy.userId ?? 'demo'} avatar={avatar.key} evolved={evolved} economy={economy} onSignIn={() => setShowAccount(true)} /></div>
+      {tab === 'home' && <HomeTab avatar={avatar} evolved={evolved} level={level} xp={xp} xpMax={xpMax} dailyStreak={dailyStreak} disabled={!economy.ready || economy.busy} workouts={workouts} points={points} feedback={feedback} rank={rank} onWorkout={() => setShowWorkout(true)} />}
       {tab === 'leaderboard' && <LeaderboardTab ranked={ranked} />}
-      {tab === 'profile' && <ProfileTab avatar={avatar} level={level} xp={xp} workouts={workouts} points={points} rank={rank} />}
+      {tab === 'profile' && <ProfileTab avatar={avatar} level={level} xp={xp} xpMax={xpMax} workouts={workouts} points={points} rank={rank} />}
     </main>
+    {showAccount && <AccountDialog onClose={() => setShowAccount(false)} />}
+    {showWorkout && <WorkoutDialog key={economy.userId ?? 'demo'} pending={economy.pendingWorkout} busy={economy.busy} onSave={addWorkout} onClose={() => setShowWorkout(false)} />}
     <nav className="bottom-tabs" aria-label="Primary navigation">
       {(['home', 'leaderboard', 'profile', 'shop'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><Icon name={item === 'leaderboard' ? 'trophy' : item === 'profile' ? 'user' : item === 'shop' ? 'shop' : 'home'} /><span>{item === 'home' ? 'Train' : item[0].toUpperCase() + item.slice(1)}</span></button>)}
     </nav>
@@ -92,12 +101,12 @@ export default function FlexiApp({ players }: { players: LeaderboardPlayer[] }) 
 
 function Brand() { return <div className="brand">FLEXI</div> }
 
-function HomeTab({ avatar, evolved, level, xp, workouts, points, feedback, rank, onWorkout }: { avatar: typeof avatars[number]; evolved: boolean; level: number; xp: number; workouts: number; points: number; feedback: string; rank: number; onWorkout: () => void }) {
+function HomeTab({ avatar, evolved, level, xp, xpMax, dailyStreak, disabled, workouts, points, feedback, rank, onWorkout }: { avatar: typeof avatars[number]; evolved: boolean; level: number; xp: number; xpMax: number; dailyStreak: number; disabled: boolean; workouts: number; points: number; feedback: string; rank: number; onWorkout: () => void }) {
   return <><section className="hero-card">
-    <div className="hero-copy"><span className="eyebrow">LEVEL {level} · {evolved ? 'POWERED UP' : 'RISING ROOKIE'}</span><h1>Keep showing up,<br /><em>keep growing.</em></h1><p>{evolved ? `${avatar.name} evolved! Keep training to master this stronger form.` : `${avatar.name} is getting stronger with every rep.`}</p><div className="progress-label"><span>Level progress</span><b>{xp} / 100 XP</b></div><div className="progress"><i style={{ width: `${xp}%` }} /></div><button className="primary" onClick={onWorkout}><Icon name="plus" />Log a workout</button></div>
-    <div className={`avatar-stage ${feedback}`}><span className="xp-pop">+16 XP</span><span className="level-pop">LEVEL UP</span><AvatarArt avatar={avatar.key} evolved={evolved} /><div className="level-chip"><small>LVL</small><b>{level}</b></div></div>
+    <div className="hero-copy"><span className="eyebrow">LEVEL {level} · {evolved ? 'POWERED UP' : 'RISING ROOKIE'}</span><h1>Keep showing up,<br /><em>keep growing.</em></h1><p>{evolved ? `${avatar.name} evolved! Keep training to master this stronger form.` : `${avatar.name} is getting stronger with every rep.`}</p><div className="progress-label"><span>Level progress</span><b>{xp} / {xpMax} XP</b></div><div className="progress"><i style={{ width: `${xp / xpMax * 100}%` }} /></div><button className="primary" disabled={disabled} onClick={onWorkout}><Icon name="plus" />Log a workout</button></div>
+    <div className={`avatar-stage ${feedback}`}><span className="xp-pop">WORKOUT SAVED</span><span className="level-pop">LEVEL UP</span><AvatarArt avatar={avatar.key} evolved={evolved} /><div className="level-chip"><small>LVL</small><b>{level}</b></div></div>
   </section>
-  <section className="stat-grid"><article><Icon name="flame" /><div><b>6 days</b><span>Current streak</span></div></article><article><Icon name="bolt" /><div><b>{workouts}</b><span>Total workouts</span></div></article><article><Icon name="trophy" /><div><b>#{rank}</b><span>Global rank</span></div></article></section>
+  <section className="stat-grid"><article><Icon name="flame" /><div><b>{dailyStreak} {dailyStreak === 1 ? 'day' : 'days'}</b><span>Current streak</span></div></article><article><Icon name="bolt" /><div><b>{workouts}</b><span>Total workouts</span></div></article><article><Icon name="trophy" /><div><b>#{rank}</b><span>Global rank</span></div></article></section>
   <section className="rank-card"><div><span className="eyebrow">GLOBAL LEAGUE</span><h2>You&apos;re at #{rank} with {points.toLocaleString()} points</h2><p>Log workouts to pass the athletes ahead of you.</p></div><Icon name="trophy" /></section></>
 }
 
@@ -105,6 +114,6 @@ function LeaderboardTab({ ranked }: { ranked: Array<LeaderboardPlayer & { curren
   return <section className="page-panel"><div className="page-heading"><span className="eyebrow">GLOBAL LEADERBOARD</span><h1>Flexi League</h1><p>Every logged workout earns points and moves you closer to the top.</p></div><div className="podium">{ranked.slice(0, 3).map((player, index) => <div key={player.id} className={`podium-player place-${index + 1}`}><span>#{index + 1}</span><div className="leader-avatar"><AvatarArt avatar={player.avatar} /></div><b>{player.name}</b><small>{player.points.toLocaleString()} pts</small></div>)}</div><div className="leader-list">{ranked.slice(3).map((player, index) => <article key={player.id} className={player.current ? 'current' : ''}><b className="rank-number">{index + 4}</b><div className="list-avatar"><AvatarArt avatar={player.avatar} /></div><div className="leader-name"><b>{player.name}{player.current && <span>YOU</span>}</b><small>@{player.handle} · {player.streak} day streak</small></div><strong>{player.points.toLocaleString()}<small> pts</small></strong></article>)}</div></section>
 }
 
-function ProfileTab({ avatar, level, xp, workouts, points, rank }: { avatar: typeof avatars[number]; level: number; xp: number; workouts: number; points: number; rank: number }) {
-  return <section className="page-panel profile-page"><div className="profile-hero"><div className="profile-avatar"><AvatarArt avatar={avatar.key} evolved={level >= 5} /></div><span className="level-badge">LEVEL {level}</span><h1>Flexi Athlete</h1><p>@flexi.athlete · Training with {avatar.name}</p></div><div className="profile-stats"><article><b>{points.toLocaleString()}</b><span>Total points</span></article><article><b>{workouts}</b><span>Workouts</span></article><article><b>#{rank}</b><span>Global rank</span></article></div><div className="profile-card"><div><span className="eyebrow">CURRENT LEVEL</span><h2>{xp} XP earned</h2></div><b>{100 - xp} XP to go</b><div className="progress"><i style={{ width: `${xp}%` }} /></div></div></section>
+function ProfileTab({ avatar, level, xp, xpMax, workouts, points, rank }: { avatar: typeof avatars[number]; level: number; xp: number; xpMax: number; workouts: number; points: number; rank: number }) {
+  return <section className="page-panel profile-page"><div className="profile-hero"><div className="profile-avatar"><AvatarArt avatar={avatar.key} evolved={level >= 5} /></div><span className="level-badge">LEVEL {level}</span><h1>Flexi Athlete</h1><p>@flexi.athlete · Training with {avatar.name}</p></div><div className="profile-stats"><article><b>{points.toLocaleString()}</b><span>Total points</span></article><article><b>{workouts}</b><span>Workouts</span></article><article><b>#{rank}</b><span>Global rank</span></article></div><div className="profile-card"><div><span className="eyebrow">CURRENT LEVEL</span><h2>{xp} XP earned</h2></div><b>{xpMax - xp} XP to go</b><div className="progress"><i style={{ width: `${xp / xpMax * 100}%` }} /></div></div></section>
 }
