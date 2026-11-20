@@ -15,7 +15,7 @@ Source: `Flexi #2 (1).zip`. Treat the archive as design/source material, not rep
 - Keep 100 XP per distinct local workout day, 500 XP per level, and level-based cosmetic claims. No spendable points or payments.
 - Record a user-selected past workout time, derive its local day in the account timezone in SQL, and keep the server receipt timestamp separate. Neither time nor reward inputs can be edited after logging.
 - Weekly goal may be chosen during initial onboarding before any workout; subsequently it is fixed. Timezone remains fixed at signup. Fitness preferences are saved independently of reward rules.
-- Social interactions, live rankings and battle passes remain deferred. Preserve the Social layout with clearly labelled editorial rankings and unavailable-state copy, without fabricated personal ranks or friend mutations.
+- Friends are available through shared codes with immediate mutual connections. Shared activity, live rankings and battle passes remain deferred; editorial rankings remain clearly labelled.
 - Calendar-provider preference is a preference only. Google Calendar export is an explicit link; no provider connection or synchronization is implied.
 
 ## Verification status

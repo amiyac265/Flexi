@@ -46,3 +46,8 @@ Indexes cover `(owner, completed_at, id)` history, completed `(owner, local_date
 Deleting an Auth user through administrative tooling cascades to their profile and personal rows. There is no user-facing account deletion endpoint yet. Workouts are voided, calendar entries cancelled, and catalogs archived instead of deleting history. Catalog item deletion is restricted while inventory references exist. Later changes to established weekly goals/timezones will need effective-dated rules in a later migration.
 
 Apply future schema changes through new migrations after reviewing existing data. The new integration migration has been validated in isolated databases. Applying it to a linked hosted project remains a separate deployment step.
+
+
+## Friend codes and connections
+
+Migration `20261120000000_friends.sql` adds `profiles.friend_code` (unique, non-null, 12 uppercase hex characters, generated independently of user metadata) and `friendships(user_low, user_high, created_at)`. The ordered composite primary key plus `user_low < user_high` prevents self-links and duplicate/reversed pairs. Profile deletion cascades to its connections. Client roles have SELECT only under participant RLS; writes use `flexi_add_friend(jsonb)`. The authenticated `flexi_friends()` RPC returns only the caller's code and minimal summaries of connected accounts. Codes and timestamps cannot be changed through the app. Friend creation never changes workout rewards.

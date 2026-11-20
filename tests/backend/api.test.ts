@@ -5,7 +5,7 @@ import { authenticate, handleAPI, readBody, type APIContext } from '../../src/ba
 import { databaseError } from '../../src/backend/data.ts'
 import type { Database, ProfileRow } from '../../src/backend/database.types.ts'
 const id = '00000000-0000-4000-8000-000000000001'
-const profile: ProfileRow = { id, display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, goals: [], experience_level: 'beginner', preferred_time: 'flexible', calendar_provider: 'none', onboarding_completed: false, equipped_cosmetics: {}, created_at: '2026-11-02T12:00:00Z' }
+const profile: ProfileRow = { id, friend_code: 'AAAAAAAAAAAA', display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, goals: [], experience_level: 'beginner', preferred_time: 'flexible', calendar_provider: 'none', onboarding_completed: false, equipped_cosmetics: {}, created_at: '2026-11-02T12:00:00Z' }
 const workout = { id, owner: id, request_id: 'request-1234', title: 'Gym', duration_minutes: 30, notes: '', exercises: [], status: 'completed', local_date: '2026-11-02', completed_at: '2026-11-02T12:00:00Z', voided_at: null }
 function request(path: string, method = 'GET', body?: unknown) {
   return new Request(`http://localhost/api/flexi/${path}`, { method, ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
@@ -220,4 +220,33 @@ test('a project missing the integration migration returns a setup error before r
   })
   t.mock.method(globalThis, 'fetch', async (url: string | URL) => String(url).includes('/auth/v1/user') ? Response.json({ id }) : Response.json({ ...profile, onboarding_completed: undefined }))
   await assert.rejects(authenticate(new Request('http://localhost', { headers: { Authorization: 'Bearer test-token' } })), /latest Flexi database migrations/)
+})
+
+test('friends require authentication and validate codes before database calls', async () => {
+  for (const method of ['GET', 'POST']) {
+    const response = await handleAPI(request('friends', method), ['friends'])
+    assert.equal(response.status, 401)
+    assert.equal(response.headers.get('cache-control'), 'private, no-store')
+  }
+  for (const body of [{}, { code: null }, { code: 'short' }, { code: 'GGGGGGGGGGGG' }, { code: 'BBBBBBBBBBBB', owner: id }]) {
+    assert.equal((await run(request('friends', 'POST', body))).status, 400)
+  }
+})
+test('friends API uses authenticated RPCs and normalizes shared codes', async () => {
+  const friend = { id: '00000000-0000-4000-8000-000000000002', displayName: 'Bob', avatar: 'panda', addedAt: '2026-11-20T12:00:00Z' }
+  const ctx = context(async (url, init) => {
+    if (String(url).endsWith('/flexi_friends')) return Response.json({ code: 'AAAAAAAAAAAA', friends: [friend] })
+    assert.match(String(url), /rpc\/flexi_add_friend$/)
+    assert.deepEqual(JSON.parse(String(init?.body)), { p_input: { code: 'BBBBBBBBBBBB' } })
+    return Response.json({ friend, replayed: true })
+  })
+  const get = await run(request('friends'), ctx)
+  assert.equal(get.status, 200)
+  assert.deepEqual((await get.json()).data.friends, [friend])
+  const post = await run(request('friends', 'POST', { code: ' bbbbbbbbbbbb ' }), ctx)
+  assert.equal(post.status, 200)
+  assert.equal(post.headers.get('vary'), 'Authorization')
+  assert.deepEqual((await post.json()).data, { friend, replayed: true })
+  const missing = context(async () => Response.json({ code: 'PT404', message: 'No friend found. Check the code and try again.' }, { status: 404 }))
+  assert.equal((await run(request('friends', 'POST', { code: '000000000000' }), missing)).status, 404)
 })

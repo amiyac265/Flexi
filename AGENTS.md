@@ -11,7 +11,7 @@ The user chose Supabase database and authentication on November 2, 2026.
 - Treat private responses as no-store. Never log passwords, tokens, or private workout notes.
 - Secrets belong in local/deployment environment settings, not source or chat. `.env.example` lists public configuration only.
 - Schema/data deletion on a live database requires a concrete preservation plan and user authorization. This repo does not itself provision a hosted project.
-- Keep the backend API contract and setup guide in `docs/` current. Social interactions and battle passes are deferred.
+- Keep the backend API contract and setup guide in `docs/` current. Friend codes support immediate mutual connections; shared activity, live rankings, and battle passes are deferred.
 - Check with `pnpm typecheck`, `pnpm test:backend`, `pnpm test:database` (embedded PostgreSQL), and `pnpm build`.
 - Database tests use isolated embedded PostgreSQL; `pnpm test:database:native` additionally tests concurrent connections in a disposable native cluster and do not contact hosted databases. Hosted Auth must also be smoke-tested after project setup.
 

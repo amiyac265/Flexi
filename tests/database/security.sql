@@ -236,3 +236,55 @@ set role authenticated;
 select expect_error('select flexi_update_profile(''{"equipped":{"top":"00000000-0000-4000-8000-000000000021"}}'')','PT403');
 select 'PASS: layered outfits enforce per-slot ownership, partial merges, archive checks and legacy unequip.';
 reset role;
+
+-- Friend codes are backfilled, immutable through app roles, and independent of signup metadata.
+do $$ begin assert not exists(select 1 from profiles where friend_code is null); end $$;
+update profiles set friend_code = 'AAAAAAAAAAAA' where id = '00000000-0000-4000-8000-000000000001';
+update profiles set friend_code = 'BBBBBBBBBBBB' where id = '00000000-0000-4000-8000-000000000002';
+insert into auth.users values ('00000000-0000-4000-8000-000000000099','{"displayName":"Outsider","friend_code":"AAAAAAAAAAAA"}');
+set role anon;
+select expect_error('select flexi_friends()', '42501');
+select expect_error('select flexi_add_friend(''{"code":"BBBBBBBBBBBB"}'')', '42501');
+select expect_error('select * from friendships', '42501');
+set role authenticated;
+set request.jwt.claim.sub = '';
+select expect_error('select flexi_friends()', 'PT401');
+select expect_error('select flexi_add_friend(''{"code":"BBBBBBBBBBBB"}'')', 'PT401');
+set request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select expect_error('update profiles set friend_code=''CCCCCCCCCCCC''', '42501');
+select expect_error('select flexi_update_profile(''{"friend_code":"CCCCCCCCCCCC"}'')', 'PT400');
+select expect_error('select flexi_add_friend(''{"code":"AAAAAAAAAAAA"}'')', 'PT400');
+select expect_error('select flexi_add_friend(''{"code":"bad"}'')', 'PT400');
+select expect_error('select flexi_add_friend(''{"code":null}'')', 'PT400');
+select expect_error('select flexi_add_friend(''{"code":"BBBBBBBBBBBB","owner":"00000000-0000-4000-8000-000000000099"}'')', 'PT400');
+select expect_error('select flexi_add_friend(''{"code":"000000000000"}'')', 'PT404');
+select expect_error('insert into friendships(user_low,user_high) values(''00000000-0000-4000-8000-000000000001'',''00000000-0000-4000-8000-000000000099'')', '42501');
+do $$ declare result jsonb; days jsonb := flexi_progress_days(); begin
+  assert flexi_friends()->'friends' = '[]'::jsonb;
+  result := flexi_add_friend('{"code":" bbbbbbbbbbbb "}');
+  assert result->>'replayed' = 'false';
+  assert result->'friend'->>'displayName' = 'Bob';
+  assert (select array_agg(k order by k) from jsonb_object_keys(result->'friend') k) = array['addedAt','avatar','displayName','id'];
+  assert flexi_add_friend('{"code":"BBBBBBBBBBBB"}')->>'replayed' = 'true';
+  assert jsonb_array_length(flexi_friends()->'friends') = 1;
+  assert (select count(*) from profiles) = 1;
+  assert days = flexi_progress_days();
+end $$;
+set request.jwt.claim.sub = '00000000-0000-4000-8000-000000000002';
+do $$ begin
+  assert flexi_add_friend('{"code":"AAAAAAAAAAAA"}')->>'replayed' = 'true';
+  assert flexi_friends()->'friends'->0->>'displayName' = 'Alice';
+  assert (select count(*) from friendships) = 1;
+  assert (select count(*) from profiles) = 1;
+  assert (select count(*) from workout_logs where owner <> auth.uid()) = 0;
+end $$;
+select expect_error('delete from friendships', '42501');
+select expect_error('update friendships set created_at=now()', '42501');
+set request.jwt.claim.sub = '00000000-0000-4000-8000-000000000099';
+do $$ begin
+  assert flexi_friends()->'friends' = '[]'::jsonb;
+  assert flexi_friends()->>'code' <> 'AAAAAAAAAAAA';
+  assert (select count(*) from friendships) = 0;
+end $$;
+select 'PASS: mutual friends, canonical retries, no reward changes, restricted DTOs, immutable codes and account isolation.';
+reset role;

@@ -92,7 +92,9 @@ async function setup(page: Page, onboarded = true) {
   const outfits: Record<string, Record<string, string>> = { [alice]: {}, [bob]: {} }
   const inventories: Record<string, string[]> = { [alice]: [], [bob]: [] }
   const tokens = { [alice]: token(alice), [bob]: token(bob) }
+  let connected = false
   const state = {
+    failFriends: false,
     failWorkout: false,
     failCalendar: false,
     failTrain: false,
@@ -194,6 +196,18 @@ async function setup(page: Page, onboarded = true) {
         },
       })
     state.requests.push({ path, method, userId: id, body })
+    if (path === 'friends') {
+      if (state.failFriends) return fail()
+      const ownCode = id === alice ? 'AAAAAAAAAAAA' : 'BBBBBBBBBBBB'
+      const otherId = id === alice ? bob : alice
+      const friend = { id: otherId, displayName: profiles[otherId].displayName, avatar: profiles[otherId].avatar, addedAt: '2026-11-20T12:00:00Z' }
+      if (method === 'GET') return respond({ code: ownCode, friends: connected ? [friend] : [] })
+      const code = String(body.code).trim().toUpperCase()
+      if (code === ownCode || !['AAAAAAAAAAAA', 'BBBBBBBBBBBB'].includes(code)) return route.fulfill({ status: 400, json: { error: { code: 'INVALID_INPUT', message: code === ownCode ? 'That is your code. Ask a friend for theirs!' : 'No friend found. Check the code and try again.' } } })
+      const replayed = connected
+      connected = true
+      return respond({ friend, replayed })
+    }
     if (path === 'train') {
       if (state.failTrain) return fail()
       return respond({
@@ -633,8 +647,60 @@ test('load failures have a retry and password reset recovery is handled', async 
   await expect(page.getByRole('button', { name: 'Log a workout' })).toBeVisible()
   await page.getByRole('button', { name: 'Social', exact: true }).click()
   await expect(
-    page.getByText('Curated entries. Live rankings and friend connections are coming later.'),
+    page.getByText('Curated entries. Live rankings are coming later.'),
   ).toBeVisible()
   await noOverflow(page)
   await page.screenshot({ path: info.outputPath('social.png'), fullPage: true })
+})
+
+
+test('friend codes connect accounts, survive reload and recover from errors', async ({ page }, info) => {
+  const app = await setup(page)
+  await page.goto('/')
+  await login(page)
+  await page.getByRole('button', { name: 'Social', exact: true }).click()
+  await expect(page.getByLabel('Your friend code', { exact: true })).toHaveValue('AAAAAAAAAAAA')
+  await expect(page.getByText('Your circle starts with one friend.')).toBeVisible()
+  await page.screenshot({ path: info.outputPath('friends-empty.png'), fullPage: true })
+  const input = page.getByLabel('Their friend code')
+  const add = page.getByRole('button', { name: 'Add friend', exact: true })
+  await input.fill('short')
+  await expect(add).toBeDisabled()
+  await input.fill('AAAAAAAAAAAA')
+  await add.click()
+  await expect(page.locator('.friends-panel').getByRole('alert')).toContainText('That is your code')
+  await input.fill('000000000000')
+  await add.click()
+  await expect(page.locator('.friends-panel').getByRole('alert')).toContainText('No friend found')
+  app.failFriends = true
+  await input.fill('bbbbbbbbbbbb')
+  await add.click()
+  await expect(page.locator('.friends-panel').getByRole('alert')).toContainText('Temporarily unavailable')
+  await expect(input).toHaveValue('bbbbbbbbbbbb')
+  app.failFriends = false
+  await add.click()
+  await expect(page.locator('.friends-panel').getByRole('status')).toContainText('Bob joined your circle!')
+  await expect(page.locator('.friend-person')).toHaveCount(1)
+  await input.fill('BBBBBBBBBBBB')
+  await add.click()
+  await expect(page.locator('.friends-panel').getByRole('status')).toContainText('already friends')
+  await expect(page.locator('.friend-person')).toHaveCount(1)
+  await page.reload()
+  await page.getByRole('button', { name: 'Social', exact: true }).click()
+  await expect(page.locator('.friend-person')).toContainText('Bob')
+  await noOverflow(page)
+  await page.screenshot({ path: info.outputPath('friends-added.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Profile', exact: true }).click()
+  await page.getByRole('button', { name: /Log out/ }).click()
+  await login(page, 'bob@example.test')
+  await page.getByRole('button', { name: 'Social', exact: true }).click()
+  await expect(page.getByLabel('Your friend code', { exact: true })).toHaveValue('BBBBBBBBBBBB')
+  await expect(page.locator('.friend-person')).toContainText('Alice')
+  await expect(page.locator('.friend-person')).not.toContainText('Bob')
+  app.failFriends = true
+  await page.getByRole('button', { name: 'Refresh friends' }).click()
+  await expect(page.locator('.friends-panel').getByRole('alert')).toContainText('Temporarily unavailable')
+  app.failFriends = false
+  await page.getByRole('button', { name: 'Refresh friends' }).click()
+  await expect(page.locator('.friends-panel').getByRole('alert')).toHaveCount(0)
 })
