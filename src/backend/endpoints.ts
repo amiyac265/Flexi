@@ -80,6 +80,14 @@ async function contentPreview(db: DB, kind: 'news' | 'tutorial') {
 }
 const routes: { path: string; method: string; handler: Handler }[] = []
 function endpoint(path: string, method: string, handler: Handler) { routes.push({ path, method, handler }) }
+endpoint('friends', 'GET', async (_req, { db }) => unwrap(await db.rpc('flexi_friends', {})))
+endpoint('friends', 'POST', async (req, { db }) => {
+  const input = await readBody(req)
+  allowFields(input, ['code'])
+  const code = text(input.code, 'code', 12).toUpperCase()
+  if (!/^[A-F0-9]{12}$/.test(code)) throw new BackendError('INVALID_INPUT', 'Enter a 12-character friend code.')
+  return unwrap(await db.rpc('flexi_add_friend', { p_input: { code } }))
+})
 endpoint('profile', 'GET', async (_req, { profile }) => profileDTO(profile))
 endpoint('onboarding', 'POST', async (req, { db }) => profileDTO(unwrap(await db.rpc('flexi_save_onboarding', { p_input: onboardingInput(await readBody(req)) }))))
 endpoint('profile', 'PATCH', async (req, { db }) => profileDTO(unwrap(await db.rpc('flexi_update_profile', { p_input: validateProfileChanges(await readBody(req), ['displayName', 'avatar']) }))))

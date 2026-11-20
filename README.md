@@ -19,7 +19,7 @@ pnpm build
 pnpm test:frontend
 ```
 
-The backend supports personal workouts/progress, calendar, characters, editorial content, and level-unlocked cosmetics. The November Figma frontend is connected to `src/lib/flexi-api.ts`, including authentication, onboarding, workout history, calendar planning and layered avatar outfits. Apply the new `20261114000000_frontend_integration.sql` migration before using it. Social interactions and battle passes are deferred. No hosted database has been provisioned by this repository alone.
+The backend supports personal workouts/progress, calendar, characters, editorial content, and level-unlocked cosmetics. The November Figma frontend is connected to `src/lib/flexi-api.ts`, including authentication, onboarding, workout history, calendar planning and layered avatar outfits. Apply all pending migrations, including `20261120000000_friends.sql`, before using the Social friend-code demo. Friend codes support immediate mutual connections; shared activity, live rankings, and battle passes are deferred. No hosted database has been provisioned by this repository alone.
 
 Interactive API testing: start the app and open **http://localhost:3000/api-docs**. Raw OpenAPI: **http://localhost:3000/api/openapi**. Sign in with a confirmed Supabase test account on the docs page; the app and API docs use separate login sessions.
 

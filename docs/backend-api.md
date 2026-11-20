@@ -10,13 +10,13 @@ Start the app with `corepack pnpm dev`, then open **http://localhost:3000/api-do
 4. Expand **GET /profile** or **GET /train**, click **Try it out**, then **Execute**.
 5. To test a write, use **POST /workouts**. Choose a new `requestId` for each intentional workout; reuse the same ID and payload to test retry handling. Copy returned IDs into GET/DELETE operations.
 
-All 19 endpoints include request/response schemas. Requests affect the configured database: use a test account. Swagger's login session is memory-only, separate from the app's persisted login, and expires on reload. Passwords/tokens are not sent to a third-party Swagger validator; UI assets are served by this app. The docs are public, while the API remains authenticated and protected by the same database policies. Swagger remains independent of the app’s login and onboarding screens.
+All 21 endpoints include request/response schemas. Requests affect the configured database: use a test account. Swagger's login session is memory-only, separate from the app's persisted login, and expires on reload. Passwords/tokens are not sent to a third-party Swagger validator; UI assets are served by this app. The docs are public, while the API remains authenticated and protected by the same database policies. Swagger remains independent of the app’s login and onboarding screens.
 
 Updated November 14, 2026. This standalone Next.js app uses Supabase Postgres and Auth. Start with [backend-setup.md](backend-setup.md) to provision a project and apply the migration. There is no Figma runtime connection or Payload dependency.
 
 ## Frontend starting point
 
-Use `src/lib/flexi-api.ts`. It has typed methods, attaches the Supabase access token, and normalizes API errors. Call it from browser event handlers/effects; importing it alone does not initialize authentication. The November Figma export is integrated: signup/login/recovery, onboarding, Train, workout history, calendar, character selection, layered outfits, and level-based claims use this client. All personal values come from the API. Social displays only the editorial showcase; friend interactions remain deferred.
+Use `src/lib/flexi-api.ts`. It has typed methods, attaches the Supabase access token, and normalizes API errors. Call it from browser event handlers/effects; importing it alone does not initialize authentication. The November Figma export is integrated: signup/login/recovery, onboarding, Train, workout history, calendar, character selection, layered outfits, and level-based claims use this client. All personal values come from the API. Social supports adding mutual friends by shared code, alongside the editorial showcase.
 
 ```ts
 import { flexiAPI } from '@/lib/flexi-api'
@@ -64,6 +64,8 @@ All paths below begin with `/api/flexi`. Success is HTTP 200 with `{ "data": ...
 |---|---|---|
 | GET | `/train` | Profile, progress recap, latest 5 workouts, next 3 plans, up to 5 news and 5 tutorials |
 | POST | `/onboarding` | `goals`, `experienceLevel`, `weeklyGoal`, `preferredTime`, `calendarProvider`; complete setup or update fitness preferences |
+| GET | `/friends` | Your shareable code and minimal friend summaries |
+| POST | `/friends` | Add a mutual friend with `{ code }`; retries are idempotent |
 | GET | `/profile` | Safe profile fields, no password/session internals |
 | PATCH | `/profile` | `displayName?`, `avatar?` |
 | GET | `/progress` | Totals, level, daily/weekly streaks, weekly progress |
@@ -175,7 +177,7 @@ News is editorial content, not an automatically fetched live news service. Empty
 - Routes: `src/app/api/flexi/[...path]/route.ts` delegates to 19 handlers in `src/backend/endpoints.ts`.
 - API DTOs/mapping: `src/backend/data.ts`; SQL row/RPC types: `src/backend/database.types.ts`.
 - All app tables use RLS. Personal data is visible only to its owner. Ordinary app roles have SELECT grants only; writes go through authenticated database functions.
-- Workout logging, voiding, calendar mutations, profile changes, and cosmetic claims are transactional. Private helper functions are not exposed through the Data API. Same-account mutations lock the profile first; unique keys also enforce retry identity and one claim per item.
+- Workout logging, voiding, calendar mutations, profile changes, and cosmetic claims are transactional. Private helper functions are not exposed through the Data API. Reward-bearing mutations lock the profile first; unique keys also enforce retry identity and one claim per item.
 - Progress uses a database aggregation over all owned completed days, avoiding the Data API row cap. XP and streaks are computed from those dates, with no editable balance.
 
 Run `pnpm typecheck`, `pnpm test:backend`, `pnpm test:database`, and `pnpm build`. The HTTP tests mock Supabase network responses. Database tests execute real PostgreSQL policies/functions in PGlite with Auth schema stand-ins; its queued requests are serialized. `pnpm test:database:native` adds actual separate-connection race tests when native PostgreSQL tools can run. Native PostgreSQL checks passed outside the sandbox, including eight simultaneous workout retries, cosmetic claims and calendar retries.
@@ -184,7 +186,7 @@ Use `pnpm smoke:api` after setting up a hosted project and a dedicated test acco
 
 The frontend restores the Supabase session and mounts private data by account ID. Mutating calls verify that the session still belongs to that account. Account changes unmount cached UI and clear that account’s session-storage retry drafts. No private progress or inventory is read from the Figma export’s old local-storage keys. Workout and calendar submissions retain their payload and request ID in session storage until a confirmed result, surviving reloads in the same tab. Uncertain submissions are frozen and retried as-is. Successful writes are cleared before refreshing, so a refresh failure cannot cause a second intentional submission.
 
-Friends, friend activity, community competition, battle passes, external news ingestion, notifications, account deletion/export, calendar sync, and mobile health integrations remain future work.
+Friend activity, community competition, battle passes, external news ingestion, notifications, account deletion/export, calendar sync, and mobile health integrations remain future work.
 
 ## Onboarding preferences
 
@@ -193,3 +195,13 @@ Friends, friend activity, community competition, battle passes, external news in
 ## Frontend verification
 
 `pnpm test:frontend` starts an isolated Next.js dev server using fake Supabase configuration and browser-intercepted Auth/API fixtures. It exercises the real components and client but does not contact hosted databases or verify hosted email delivery. Run `pnpm exec playwright install chromium` once, or set `PLAYWRIGHT_CHANNEL=chrome` to use installed Chrome. See `tests/frontend/` and `docs/frontend-integration-plan.md`.
+
+
+## Friends (demo)
+
+- `GET /api/flexi/friends` → `{ data: { code, friends: [{ id, displayName, avatar, addedAt }] } }`. Returns your stable 12-character uppercase hex code and an unpaginated friend list, newest first.
+- `POST /api/flexi/friends` with `{ "code": "A1B2C3D4E5F6" }` → `{ data: { friend: { id, displayName, avatar, addedAt }, replayed } }`. Trims the code and accepts either case. Unknown fields and malformed/self codes return 400; an unknown code returns 404.
+
+Sharing a code allows another signed-in account to connect both users immediately. No request/accept stage, discovery by email, removal, chat, shared workouts, or XP rewards are included. The unordered user pair is the retry identity: repeated or reverse-direction adds return the existing connection (`replayed: true`). Database uniqueness handles concurrent adds.
+
+Both endpoints require the user's bearer token and return `private, no-store`. RPCs derive the caller from `auth.uid()`. RLS permits participants to read only their own connections; clients cannot mutate friendship rows or friend codes directly. Other profiles remain private; the RPC shares only the four documented friend fields, never email, codes, workout notes or preferences.

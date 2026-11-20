@@ -24,6 +24,7 @@ import {
   type WorkoutType,
 } from './WorkoutLogging'
 import ShopTab from './ShopTab'
+import FriendsPanel from './FriendsPanel'
 import { AvatarArt, FittedAvatar, type ShopItem, type Equipped } from './FlexiVisuals'
 
 const avatars = [
@@ -367,7 +368,7 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
               onProfile={() => setTab('profile')}
             />
           )}
-          {tab === 'social' && <SocialTab players={players} />}
+          {tab === 'social' && <SocialTab players={players} api={api} />}
           {tab === 'profile' && (
             <ProfileTab
               avatar={avatar}
@@ -676,23 +677,23 @@ function HomeTab({
           <span>Coming later</span>
         </div>
         <div className="empty-feed">
-          Friend connections and shared workouts are coming in a future update.
+          Add friends in Social. Shared workout activity is coming in a future update.
         </div>
       </section>
     </>
   )
 }
 
-function SocialTab({ players }: { players: LeaderboardPlayer[] }) {
+function SocialTab({ players, api }: { players: LeaderboardPlayer[]; api: ReturnType<typeof createFlexiAPI> }) {
   return (
     <section className="social-page">
       <header className="social-hero">
         <div>
           <span className="eyebrow">SOCIAL</span>
           <h1>Stronger together.</h1>
-          <p>A little inspiration from the Flexi community.</p>
+          <p>Build your circle, one workout buddy at a time.</p>
         </div>
-        <span className="level-badge">PREVIEW</span>
+        <span className="level-badge">FIND YOUR PEOPLE</span>
       </header>
       <div className="social-summary">
         <article>
@@ -709,8 +710,8 @@ function SocialTab({ players }: { players: LeaderboardPlayer[] }) {
             <Icon name="users" />
           </span>
           <div>
-            <b>Coming later</b>
-            <small>Friends & inner circles</small>
+            <b>Friend codes</b>
+            <small>Grow your circle</small>
           </div>
         </article>
         <article>
@@ -723,12 +724,13 @@ function SocialTab({ players }: { players: LeaderboardPlayer[] }) {
           </div>
         </article>
       </div>
+      <FriendsPanel api={api} />
       <div className="social-ranking-heading">
         <div>
           <span className="eyebrow">COMMUNITY SHOWCASE</span>
           <h2>Flexi League</h2>
         </div>
-        <p>Curated entries. Live rankings and friend connections are coming later.</p>
+        <p>Curated entries. Live rankings are coming later.</p>
       </div>
       {players.length ? (
         <>

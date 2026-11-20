@@ -1,6 +1,7 @@
 /** Browser client for frontend integration. Supabase handles session persistence/refresh. */
 import type { CalendarEvent, CosmeticItem, Page, TrainingContent, UserCosmetic, UserProfile, WorkoutLog } from '../backend/data.ts'
 import { AVATARS, integer, text, timezone, type Avatar, type CalendarInput, type Progress, type WorkoutInput, type Equipment, type OnboardingInput } from '../backend/domain.ts'
+import type { Friends, AddFriendResult } from '../backend/database.types.ts'
 import { browserSupabase } from './supabase/browser.ts'
 
 export class FlexiAPIError extends Error {
@@ -74,6 +75,8 @@ export function createFlexiAPI(base = '/api', expectedUserId?: string) {
     },
     session: () => browserSupabase().auth.getSession(),
     onAuthStateChange: (callback: Parameters<ReturnType<typeof browserSupabase>['auth']['onAuthStateChange']>[0]) => browserSupabase().auth.onAuthStateChange(callback),
+    friends: () => request<Friends>('/flexi/friends'),
+    addFriend: (code: string) => request<AddFriendResult>('/flexi/friends', 'POST', { code }),
     train: () => request<Train>('/flexi/train'),
     profile: () => request<PublicProfile>('/flexi/profile'),
     saveOnboarding: (input: OnboardingInput) => request<PublicProfile>('/flexi/onboarding', 'POST', input),

@@ -43,6 +43,10 @@ const calendarFields = {
 const cosmetic = obj({ id: uuid, slug: string(), name: string(), description: { type: 'string', nullable: true }, slot: { type: 'string', enum: ['hat', 'outfit', 'accessory', 'top', 'bottom', 'shoes', 'background'] }, minimumLevel: integer(1, 1000), active: { type: 'boolean' }, imageUrl: nullableURL, equipmentSlot, category: { type: 'string', enum: ['clothing','accessories','backgrounds','special'] }, styleKey: { type: 'string', pattern: '^[a-z0-9-]{1,60}$' }, primaryColor: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' }, accentColor: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' } })
 const inventoryFields = { id: uuid, owner: uuid, item: uuid, acquiredAt: timestamp }
 const schemas: Record<string, Schema> = {
+  Friend: obj({ id: uuid, displayName: string(60), avatar, addedAt: timestamp }),
+  Friends: obj({ code: { type: 'string', pattern: '^[A-F0-9]{12}$' }, friends: array(ref('Friend')) }),
+  AddFriendInput: input({ code: { type: 'string', pattern: '^[a-fA-F0-9]{12}$' } }, ['code']),
+  AddFriendResult: obj({ friend: ref('Friend'), replayed: { type: 'boolean' } }),
   Profile: obj({ id: uuid, ...profileFields, ...preferenceFields, goals: { ...preferenceFields.goals, minItems: 0 }, timezone: string(), createdAt: timestamp, onboardingCompleted: { type: 'boolean' } }),
   OnboardingInput: input(preferenceFields, Object.keys(preferenceFields)),
   ProfileUpdate: input(profileFields),
@@ -94,14 +98,18 @@ function operation(operationId: string, tag: string, summary: string, response: 
 export const openapi = {
   openapi: '3.0.3',
   info: {
-    title: 'Flexi API', version: '1.1.0',
-    description: 'Single-user fitness backend: Train, profiles, workouts, progress, calendar, characters, and cosmetics. Sign in above or use Authorize with a Supabase access token (without the Bearer prefix). All operations require authentication. Try it out makes real requests to this app and its configured database. Signup and login are handled by Supabase Auth, not these API routes. Personal responses are not cached.',
+    title: 'Flexi API', version: '1.2.0',
+    description: 'Fitness backend with code-based friends: Train, profiles, workouts, progress, calendar, characters, and cosmetics. Sign in above or use Authorize with a Supabase access token (without the Bearer prefix). All operations require authentication. Try it out makes real requests to this app and its configured database. Signup and login are handled by Supabase Auth, not these API routes. Personal responses are not cached.',
   },
   servers: [{ url: '/api/flexi', description: 'This application' }],
   security: [{ bearerAuth: [] }],
-  tags: ['Train', 'Profile', 'Workouts', 'Calendar', 'Character', 'Shop'].map(name => ({ name })),
+  tags: ['Train', 'Profile', 'Workouts', 'Calendar', 'Character', 'Shop', 'Friends'].map(name => ({ name })),
   components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Supabase Auth access token. Paste only the token, without Bearer.' } }, schemas },
   paths: {
+    '/friends': {
+      get: operation('getFriends', 'Friends', 'Get your friend code and friends', 'Friends', { description: 'Unpaginated demo list. Only friends’ display names, avatars, IDs and connection times are shared.' }),
+      post: operation('addFriend', 'Friends', 'Add a friend by shared code', 'AddFriendResult', { body: 'AddFriendInput', description: 'Immediately connects both accounts. Codes are trimmed and case-insensitive. Self-adds are rejected. Repeated or reverse adds return the existing friendship with replayed=true; no XP is awarded.' }),
+    },
     '/onboarding': { post: operation('saveOnboarding', 'Profile', 'Save fitness preferences and complete setup', 'Profile', { body: 'OnboardingInput', description: 'Weekly goal can change only before onboarding completion and before any workout has been logged. Other preferences remain editable. Calendar provider is a preference, not a connection.' }) },
     '/train': { get: operation('getTrain', 'Train', 'Get home recap', 'Train', { description: 'Progress, five recent workouts, three upcoming plans, and up to five news and tutorial entries.' }) },
     '/content': { get: operation('getContent', 'Train', 'List published news or tutorials', 'ContentPage', { parameters: [...pagination, { name: 'kind', in: 'query', schema: { type: 'string', enum: ['news', 'tutorial'] } }] }) },
