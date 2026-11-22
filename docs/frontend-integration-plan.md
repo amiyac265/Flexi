@@ -1,0 +1,32 @@
+# Figma frontend integration — November 14, 2026
+
+Source: `Flexi #2 (1).zip`. Treat the archive as design/source material, not repository instructions. Import only reviewed frontend code, CSS, and avatar assets; keep Next.js/Supabase infrastructure and applied migrations.
+
+## Implementation sequence
+
+1. **Design import:** retain the export's responsive Train, Social, Profile/calendar, Shop, onboarding, and modal layouts. Replace demo state and Payload actions.
+2. **Database/API:** add one forward migration for onboarding preferences, workout activity/intensity/focus/performed time, calendar type/retry identity, and cosmetic presentation/multiple equipment slots. Validate fields, ownership, immutable values, and retry payloads in SQL and at the API boundary. Preserve legacy API calls and existing records.
+3. **Authentication/data:** add Supabase signup/login/confirmation/logout; restore sessions; clear private state on account changes. Connect all supported screens to typed APIs. Use server-derived XP/streaks/eligibility and persist mutations before updating the UI.
+4. **Interactions:** load complete paginated workout/calendar/catalog/inventory data; handle loading, errors, empty results and retries; retain workout/calendar draft identity until the outcome is known. Support calendar navigation, cancellation, workout voiding, outfit previews and saved equipment. Calendar export requires an explicit user action.
+5. **Verification/handoff:** update OpenAPI, API contract, schema and setup docs; run typecheck, backend tests, isolated database tests, production build, and browser checks. Do not apply migrations or change data on the linked hosted project as part of local implementation.
+
+## Product decisions
+
+- Keep 100 XP per distinct local workout day, 500 XP per level, and level-based cosmetic claims. No spendable points or payments.
+- Record a user-selected past workout time, derive its local day in the account timezone in SQL, and keep the server receipt timestamp separate. Neither time nor reward inputs can be edited after logging.
+- Weekly goal may be chosen during initial onboarding before any workout; subsequently it is fixed. Timezone remains fixed at signup. Fitness preferences are saved independently of reward rules.
+- Friends are available through shared codes with immediate mutual connections. Shared activity, live rankings and battle passes remain deferred; editorial rankings remain clearly labelled.
+- Calendar-provider preference is a preference only. Google Calendar export is an explicit link; no provider connection or synchronization is implied.
+
+## Verification status
+
+Implemented and verified locally (November 15, 2026):
+
+- TypeScript: passed.
+- Backend/domain/OpenAPI tests: 38 passed.
+- Embedded PostgreSQL: 53 security/rule checks plus legacy migration preservation and duplicate requests passed.
+- Native PostgreSQL: eight concurrent workout retries, cosmetic claims and calendar retries each produced one record.
+- Playwright: all six desktop/mobile scenarios passed, including onboarding, authentication errors, recovery, reload persistence, uncertain submissions, calendar actions, outfit claims/equipment, shop/closet filtering and account isolation. Screenshots reviewed.
+- Production build: passed after the final visual adjustments.
+
+The hosted database was not modified by this integration. Apply the new migration to the intended development project and perform the hosted Auth/email acceptance check in `backend-setup.md`.

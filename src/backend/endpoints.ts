@@ -1,5 +1,5 @@
 import { coinCheckoutEnabled, createCoinCheckout, requireCoinCheckout } from './coin-checkout.ts'
-import { AVATARS, BackendError, allowFields, calendarInput, instant, object, text, workoutInput } from './domain.ts'
+import { AVATARS, EQUIPMENT_SLOTS, BackendError, allowFields, calendarInput, instant, object, text, workoutInput, onboardingInput } from './domain.ts'
 import { calendarDTO, contentDTO, cosmeticDTO, inventoryDTO, paginated, profileDTO, progressFor, unwrap, workoutDTO, type DB } from './data.ts'
 import type { ProfileRow } from './database.types.ts'
 import { serverSupabase } from '../lib/supabase/server.ts'
@@ -17,6 +17,9 @@ export async function authenticate(req: Request): Promise<APIContext> {
   const { data, error } = await db.auth.getUser(token)
   if (error || !data.user) throw new BackendError('AUTH_REQUIRED', 'Your session expired. Please sign in again.', 401)
   const profile = unwrap(await db.from('profiles').select('*').eq('id', data.user.id).maybeSingle())
+  if (typeof profile.onboarding_completed !== 'boolean' || !Array.isArray(profile.goals) || !profile.equipped_cosmetics) {
+    throw new BackendError('BACKEND_NOT_CONFIGURED', 'Apply the latest Flexi database migrations before continuing.', 503)
+  }
   return { db, profile }
 }
 function uuid(value: unknown) {
@@ -56,24 +59,38 @@ function validateProfileChanges(input: Record<string, unknown>, fields: string[]
   if ('displayName' in input) input.displayName = text(input.displayName, 'displayName', 60)
   if ('avatar' in input && !AVATARS.includes(input.avatar as typeof AVATARS[number])) throw new BackendError('INVALID_INPUT', 'Choose bunny, panda, turtle, or deer.')
   if ('equippedCosmeticId' in input && input.equippedCosmeticId !== null) input.equippedCosmeticId = uuid(input.equippedCosmeticId)
+  if ('equipped' in input) {
+    if ('equippedCosmeticId' in input) throw new BackendError('INVALID_INPUT', 'Use one equipment input.')
+    const equipped = object(input.equipped)
+    allowFields(equipped, EQUIPMENT_SLOTS)
+    for (const value of Object.values(equipped)) if (value !== null) uuid(value)
+  }
   return input
 }
 async function character({ db, profile }: APIContext) {
   const progress = await progressFor(db, profile)
-  let equippedCosmetic = null
-  if (profile.equipped_cosmetic_id) {
-    const result = await db.from('cosmetic_items').select('*').eq('id', profile.equipped_cosmetic_id)
-    equippedCosmetic = unwrap(result).map(cosmeticDTO)[0] ?? null
-  }
+  const ids = [...new Set(Object.values(profile.equipped_cosmetics ?? {}).filter((id): id is string => Boolean(id)))]
+  if (!ids.length && profile.equipped_cosmetic_id) ids.push(profile.equipped_cosmetic_id)
+  const equippedCosmetics = ids.length ? unwrap(await db.from('cosmetic_items').select('*').in('id', ids)).map(cosmeticDTO) : []
+  const equippedCosmetic = equippedCosmetics.find(item => item.id === profile.equipped_cosmetic_id) ?? equippedCosmetics[0] ?? null
   const evolved = progress.level >= 5
-  return { avatar: profile.avatar, level: progress.level, evolved, imagePath: `/avatars/${profile.avatar}-${evolved ? 'evolved' : 'starter'}.png`, equippedCosmetic }
+  return { avatar: profile.avatar, level: progress.level, evolved, imagePath: `/avatars/${profile.avatar}-${evolved ? 'evolved' : 'starter'}.png`, equippedCosmetic, equippedCosmetics }
 }
 async function contentPreview(db: DB, kind: 'news' | 'tutorial') {
   return unwrap(await db.from('training_content').select('*').eq('kind', kind).order('published_at', { ascending: false }).order('id').limit(5)).map(contentDTO)
 }
 const routes: { path: string; method: string; handler: Handler }[] = []
 function endpoint(path: string, method: string, handler: Handler) { routes.push({ path, method, handler }) }
+endpoint('friends', 'GET', async (_req, { db }) => unwrap(await db.rpc('flexi_friends', {})))
+endpoint('friends', 'POST', async (req, { db }) => {
+  const input = await readBody(req)
+  allowFields(input, ['code'])
+  const code = text(input.code, 'code', 12).toUpperCase()
+  if (!/^[A-F0-9]{12}$/.test(code)) throw new BackendError('INVALID_INPUT', 'Enter a 12-character friend code.')
+  return unwrap(await db.rpc('flexi_add_friend', { p_input: { code } }))
+})
 endpoint('profile', 'GET', async (_req, { profile }) => profileDTO(profile))
+endpoint('onboarding', 'POST', async (req, { db }) => profileDTO(unwrap(await db.rpc('flexi_save_onboarding', { p_input: onboardingInput(await readBody(req)) }))))
 endpoint('profile', 'PATCH', async (req, { db }) => profileDTO(unwrap(await db.rpc('flexi_update_profile', { p_input: validateProfileChanges(await readBody(req), ['displayName', 'avatar']) }))))
 endpoint('progress', 'GET', async (_req, { db, profile }) => progressFor(db, profile))
 endpoint('train', 'GET', async (_req, { db, profile }) => {
@@ -112,14 +129,14 @@ endpoint('calendar', 'GET', async (req, { db }) => {
 endpoint('calendar', 'POST', async (req, { db }) => calendarDTO(unwrap(await db.rpc('flexi_create_calendar', { p_input: calendarInput(await readBody(req)) }))))
 endpoint('calendar/:id', 'PATCH', async (req, { db }, id) => {
   const input = await readBody(req)
-  allowFields(input, ['title', 'startsAt', 'endsAt', 'timezone', 'notes', 'status'])
+  allowFields(input, ['title', 'startsAt', 'endsAt', 'timezone', 'notes', 'status', 'workoutType'])
   // Merge + validation happens under a database lock, so concurrent partial edits preserve unrelated fields.
   return calendarDTO(unwrap(await db.rpc('flexi_update_calendar', { p_id: uuid(id), p_input: input })))
 })
 endpoint('calendar/:id', 'DELETE', async (_req, { db }, id) => calendarDTO(unwrap(await db.rpc('flexi_update_calendar', { p_id: uuid(id), p_input: { status: 'cancelled' } }))))
 endpoint('character', 'GET', async (_req, ctx) => character(ctx))
 endpoint('character', 'PATCH', async (req, { db }) => {
-  const profile = unwrap(await db.rpc('flexi_update_profile', { p_input: validateProfileChanges(await readBody(req), ['avatar', 'equippedCosmeticId']) }))
+  const profile = unwrap(await db.rpc('flexi_update_profile', { p_input: validateProfileChanges(await readBody(req), ['avatar', 'equippedCosmeticId', 'equipped']) }))
   return character({ db, profile })
 })
 endpoint('shop', 'GET', async (req, { db, profile }) => {

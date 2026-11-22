@@ -32,7 +32,7 @@ export function useCoinEconomy() {
     const owner = account.current, version = generation.current, load = ++loadSequence.current
     if (!owner) return
     try {
-      const [nextWallet, nextTrain, shop] = await Promise.all([flexiAPI.wallet(), flexiAPI.train(), flexiAPI.shop(1, 100)])
+      const [nextWallet, nextTrain, shop] = await Promise.all([flexiAPI.wallet(), flexiAPI.train(), flexiAPI.shop(1)])
       if (account.current !== owner || generation.current !== version || load !== loadSequence.current) return
       setWallet(nextWallet); setTrain(nextTrain); setCatalog(shop.docs); setReady(true); setError(''); return true
     } catch {
@@ -61,7 +61,7 @@ export function useCoinEconomy() {
     }
     // Defer API calls until the Auth callback releases its internal session lock.
     let authEvent = false
-    const { data: subscription } = flexiAPI.onAuthStateChange((_event, session) => {
+    const { data: subscription } = flexiAPI.onAuthStateChange(async (_event, session) => {
       authEvent = true
       const id = session?.user.id ?? null
       if (id === account.current && _event !== 'INITIAL_SESSION') return

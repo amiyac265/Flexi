@@ -1,15 +1,15 @@
 # Implemented database schema
 
-Source of truth: `supabase/migrations/20261102000000_flexi_core.sql`. UUID primary keys and UTC `timestamptz` values. All seven app tables have RLS enabled. Supabase owns `auth.users` and password/session storage.
+Source of truth: the versioned files in `supabase/migrations`: core `20261102000000`, frontend integration `20261114000000`, cardio details `20261114010000`, sport details `20261114020000`, and per-set strength details `20261114030000`. UUID primary keys and UTC `timestamptz` values. All seven app tables have RLS enabled. Supabase owns `auth.users` and password/session storage.
 
 | Table | Main fields | Relationships / rules |
 |---|---|---|
-| `profiles` | `id`, `display_name`, `avatar`, `timezone`, `weekly_goal`, `equipped_cosmetic_id`, `created_at` | ID → `auth.users`; signup trigger creates safe defaults/preferences; timezone and goal frozen; equipment must be owned and active |
-| `workout_logs` | `owner`, `request_id`, `title`, `duration_minutes`, `notes`, `exercises` JSONB, `completion_input` JSONB, `completed_at`, `local_date`, `status`, `voided_at` | Owner → profile; unique `(owner, request_id)`; immutable completion input; only voiding allowed after creation; date/time/owner assigned by DB |
-| `calendar_events` | `owner`, `title`, `starts_at`, `ends_at`, `timezone`, `notes`, `status`, `created_at` | Owner → profile; end after start, max 24 hours; planned/completed/cancelled; calendar status never awards XP |
+| `profiles` | `id`, `display_name`, `avatar`, `timezone`, `weekly_goal`, `equipped_cosmetic_id`, `equipped_cosmetics` JSONB, `goals`, `experience_level`, `preferred_time`, `calendar_provider`, `onboarding_completed`, `created_at` | ID → `auth.users`; signup trigger creates safe defaults/preferences; timezone fixed at signup; goal fixed after initial onboarding or any workout; equipment must be owned, active and in the matching slot |
+| `workout_logs` | `owner`, `request_id`, `title`, `duration_minutes`, `notes`, `exercises` JSONB, `completion_input` JSONB, `completed_at`, `performed_at`, `activity`, `intensity`, `focus_area`, `distance`, `distance_unit`, `sport_type`, `local_date`, `status`, `voided_at` | Owner → profile; unique `(owner, request_id)`; immutable completion input; paired validated cardio distance/unit and validated sport subtype; only voiding allowed after creation; owner/receipt time assigned by DB; validated actual workout time determines the local day |
+| `calendar_events` | `owner`, `title`, `starts_at`, `ends_at`, `timezone`, `notes`, `status`, `workout_type`, `request_id`, `creation_input`, `created_at` | Owner → profile; end after start, max 24 hours; planned/completed/cancelled; unique optional `(owner,request_id)` retry identity survives edits/cancellation; calendar status never awards XP |
 | `training_content` | `slug`, `title`, `kind`, `summary`, `body`, `source_url`, `image_url`, `status`, `published_at` | Unique slug; kind news/tutorial; app reads only published records whose publication date has arrived |
-| `cosmetic_items` | `slug`, `name`, `description`, `slot`, `minimum_level`, `active`, `image_url` | Unique slug; active items visible in shop; level 1–1000; no currency/payment |
-| `user_cosmetics` | `owner`, `item`, `acquired_at` | Owner → profile, item → catalog; unique `(owner,item)`; claims remain after voiding workouts; one equipped item per profile |
+| `cosmetic_items` | `slug`, `name`, `description`, `slot`, `minimum_level`, `active`, `image_url`, `category`, `style_key`, `primary_color`, `accent_color` | Unique slug; active items visible in shop; level 1–1000; no currency/payment |
+| `user_cosmetics` | `owner`, `item`, `acquired_at` | Owner → profile, item → catalog; unique `(owner,item)`; claims remain after voiding workouts; five independently equipped slots per profile |
 | `leaderboard_entries` | `display_name`, `handle`, `points`, `workouts`, `streak`, `avatar` | Editorial data retained for the exported UI; unique handle; no links to private app profiles; not live competitive rankings |
 
 Each table also has an `id` UUID. `profiles.id` is the Auth ID; other IDs default to `gen_random_uuid()`. Optional image URLs are HTTPS; storage buckets/user uploads are not provisioned. Character preset images remain static files.
@@ -24,7 +24,8 @@ Only the following public functions are granted to authenticated callers:
 |---|---|---|
 | `flexi_log_workout` | `p_input` JSONB | `{workout,replayed}` |
 | `flexi_void_workout` | `p_id` UUID | Workout row |
-| `flexi_update_profile` | `p_input` JSONB (`displayName`, `avatar`, `equippedCosmeticId`) | Profile row |
+| `flexi_update_profile` | `p_input` JSONB (`displayName`, `avatar`, `equippedCosmeticId` or partial `equipped` map) | Profile row |
+| `flexi_save_onboarding` | `p_input` JSONB (fitness preferences and initial weekly goal) | Profile row |
 | `flexi_create_calendar` | `p_input` JSONB | Calendar row |
 | `flexi_update_calendar` | `p_id`, partial `p_input` JSONB | Calendar row; status cancelled implements delete |
 | `flexi_claim_cosmetic` | `p_id` UUID | `{inventory,replayed}` |
@@ -36,17 +37,17 @@ Direct Data API/RPC clients can reach the same public functions, so authorizatio
 
 ## Progress, indexes, and lifecycle
 
-100 XP per distinct `local_date` with a completed workout; level is `1 + floor(XP/500)`. The database's local date is computed at insertion in the signup timezone. A workout's duration is 1–1440 whole minutes. Exercise summaries are optional, with at most 30 entries. There are no separate XP balances or XP ledger rows to reconcile. Claim eligibility uses the same completed-day level formula inside the database transaction.
+100 XP per distinct `local_date` with a completed workout; level is `1 + floor(XP/500)`. The database derives the local date from the immutable actual `performed_at` time in the signup timezone. The default is server time; user-supplied actual times must be finite, from 1970 onward, and not in the future. `completed_at` separately records server receipt time. A workout's duration is 1–1440 whole minutes. Workouts allow at most 30 exercises; new strength logs require detailed exercises with a validated muscle group and 1–20 rep/weight sets each. Legacy aggregate exercise summaries remain retryable. There are no separate XP balances or XP ledger rows to reconcile. Claim eligibility uses the same completed-day level formula inside the database transaction.
 
 The progress function aggregates all dates in one database snapshot so histories beyond the Data API's default 1,000-row cap remain correct. This is adequate for the MVP; a long-lived high-volume product should consider persisted daily summaries while retaining the same invariants.
 
-Indexes cover `(owner, completed_at, id)` history, completed `(owner, local_date)` reward days, `(owner, starts_at, ends_at)` calendar queries, and published `(kind, published_at)` content. Unique indexes cover workout retry keys, inventory ownership, catalog/content slugs, and editorial handles.
+Indexes cover `(owner, completed_at, id)` history, completed `(owner, local_date)` reward days, `(owner, starts_at, ends_at)` calendar queries, and published `(kind, published_at)` content. Unique indexes cover workout and calendar retry keys, inventory ownership, catalog/content slugs, and editorial handles.
 
-Deleting an Auth user through administrative tooling cascades to their profile and personal rows. There is no user-facing account deletion endpoint yet. Workouts are voided, calendar entries cancelled, and catalogs archived instead of deleting history. Catalog item deletion is restricted while inventory references exist. Editable goals/timezones will need effective-dated rules in a later migration.
+Deleting an Auth user through administrative tooling cascades to their profile and personal rows. There is no user-facing account deletion endpoint yet. Workouts are voided, calendar entries cancelled, and catalogs archived instead of deleting history. Catalog item deletion is restricted while inventory references exist. Later changes to established weekly goals/timezones will need effective-dated rules in a later migration.
 
-Apply future schema changes through new migrations after reviewing existing data. This initial migration has only been applied to isolated test databases, not a hosted project.
+Apply future schema changes through new migrations after reviewing existing data. The new integration migration has been validated in isolated databases. Applying it to a linked hosted project remains a separate deployment step.
 
 
-## Coin economy migration
+## Friend codes and connections
 
-`20261116000000_coin_economy.sql` adds `coin_wallets` (private balance and lifetime workout-entry ordinal), `coin_ledger` (unique owner/source/reference audit records), `coin_packs` (USD server catalog), and `coin_orders` (owner/request identity, immutable price snapshot, unique paid Checkout session). Cosmetic `coin_price` defaults to zero; workouts gain an immutable original `coin_reward`. App roles have SELECT only under RLS. Reward triggers and purchase RPCs atomically mutate the ledger/wallet under the profile lock. Payment fulfillment is service-role-only and called solely from the separate Stripe-verified Edge Function. Backgrounds are now an allowed cosmetic slot. No existing data or inventory is deleted.
+Migration `20261120000000_friends.sql` adds `profiles.friend_code` (unique, non-null, 12 uppercase hex characters, generated independently of user metadata) and `friendships(user_low, user_high, created_at)`. The ordered composite primary key plus `user_low < user_high` prevents self-links and duplicate/reversed pairs. Profile deletion cascades to its connections. Client roles have SELECT only under participant RLS; writes use `flexi_add_friend(jsonb)`. The authenticated `flexi_friends()` RPC returns only the caller's code and minimal summaries of connected accounts. Codes and timestamps cannot be changed through the app. Friend creation never changes workout rewards.

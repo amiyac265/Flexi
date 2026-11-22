@@ -86,6 +86,37 @@ test('workout validation rejects ownership/reward injection and malformed numeri
   }
   assert.throws(() => workoutInput({ ...valid, exercises: [{ name: 'Squat', weightKg: NaN }] }))
   assert.throws(() => workoutInput({ ...valid, exercises: Array(31).fill({ name: 'Squat' }) }))
+  assert.deepEqual(
+    workoutInput({
+      ...valid,
+      exercises: [
+        {
+          name: 'Bench press',
+          muscleGroup: 'chest',
+          setDetails: [
+            { reps: 10, weightKg: 40.1254 },
+            { reps: 8, weightKg: 45 },
+          ],
+        },
+      ],
+    }).exercises[0],
+    {
+      name: 'Bench press',
+      muscleGroup: 'chest',
+      setDetails: [
+        { reps: 10, weightKg: 40.125 },
+        { reps: 8, weightKg: 45 },
+      ],
+    },
+  )
+  for (const exercise of [
+    { name: 'Squat', muscleGroup: 'legs' },
+    { name: 'Squat', setDetails: [{ reps: 8, weightKg: 80 }] },
+    { name: 'Squat', muscleGroup: 'head', setDetails: [{ reps: 8, weightKg: 80 }] },
+    { name: 'Squat', muscleGroup: 'legs', setDetails: [{ reps: 0, weightKg: 80 }] },
+  ]) {
+    assert.throws(() => workoutInput({ ...valid, exercises: [exercise] }))
+  }
 })
 
 test('calendar validates explicit instants and ranges while allowing simple overlapping plans', () => {

@@ -5,8 +5,8 @@ import { authenticate, handleAPI, readBody, type APIContext } from '../../src/ba
 import { databaseError } from '../../src/backend/data.ts'
 import type { Database, ProfileRow } from '../../src/backend/database.types.ts'
 const id = '00000000-0000-4000-8000-000000000001'
-const profile: ProfileRow = { id, display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, created_at: '2026-11-02T12:00:00Z' }
-const workout = { id, owner: id, request_id: 'request-1234', title: 'Gym', duration_minutes: 30, notes: '', exercises: [], status: 'completed', local_date: '2026-11-02', completed_at: '2026-11-02T12:00:00Z', voided_at: null, coin_reward: 10 }
+const profile: ProfileRow = { id, friend_code: 'AAAAAAAAAAAA', display_name: 'Alice', avatar: 'bunny', timezone: 'UTC', weekly_goal: 3, equipped_cosmetic_id: null, goals: [], experience_level: 'beginner', preferred_time: 'flexible', calendar_provider: 'none', onboarding_completed: false, equipped_cosmetics: {}, created_at: '2026-11-02T12:00:00Z' }
+const workout = { id, owner: id, request_id: 'request-1234', title: 'Gym', duration_minutes: 30, notes: '', exercises: [], status: 'completed', local_date: '2026-11-02', completed_at: '2026-11-02T12:00:00Z', voided_at: null }
 function request(path: string, method = 'GET', body?: unknown) {
   return new Request(`http://localhost/api/flexi/${path}`, { method, ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
 }
@@ -17,7 +17,7 @@ const neverFetch: typeof fetch = async () => { throw new Error('Unexpected datab
 const run = (req: Request, ctx = context(neverFetch)) => handleAPI(req, new URL(req.url).pathname.split('/').slice(3), async () => ctx)
 
 test('all routes require a bearer token; cookies alone are not authentication', async () => {
-  const routes = [['profile','GET'],['profile','PATCH'],['progress','GET'],['train','GET'],['content','GET'],['workouts','GET'],[`workouts/${id}`,'GET'],['workouts','POST'],[`workouts/${id}`,'DELETE'],['calendar','GET'],['calendar','POST'],[`calendar/${id}`,'PATCH'],[`calendar/${id}`,'DELETE'],['character','GET'],['character','PATCH'],['shop','GET'],['inventory','GET'],[`shop/${id}/claim`,'POST'],['wallet','GET'],['coins/packs','GET'],['coins/checkout','POST'],[`coins/orders/${id}`,'GET']]
+  const routes = [['onboarding','POST'],['profile','GET'],['profile','PATCH'],['progress','GET'],['train','GET'],['content','GET'],['workouts','GET'],[`workouts/${id}`,'GET'],['workouts','POST'],[`workouts/${id}`,'DELETE'],['calendar','GET'],['calendar','POST'],[`calendar/${id}`,'PATCH'],[`calendar/${id}`,'DELETE'],['character','GET'],['character','PATCH'],['shop','GET'],['inventory','GET'],[`shop/${id}/claim`,'POST']]
   for (const [path, method] of routes) {
     const req = request(path, method)
     req.headers.set('Cookie', 'fake-session=admin')
@@ -30,7 +30,7 @@ test('profile returns only public profile fields and responses vary by Authoriza
   const response = await run(request('profile'))
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('vary'), 'Authorization')
-  assert.deepEqual(Object.keys((await response.json()).data).sort(), ['id','displayName','avatar','timezone','weeklyGoal','createdAt'].sort())
+  assert.deepEqual(Object.keys((await response.json()).data).sort(), ['id','displayName','avatar','timezone','weeklyGoal','createdAt','goals','experienceLevel','preferredTime','calendarProvider','onboardingCompleted'].sort())
 })
 test('router returns 404/405 and allowed verbs without executing a mutation', async () => {
   assert.equal((await run(request('missing'))).status, 404)
@@ -131,31 +131,127 @@ test('authentication verifies the bearer token with Supabase before reading a pr
   assert.match(calls[0], /auth\/v1\/user$/)
 })
 
-test('coin wallet uses the authenticated RPC and remains no-store', async () => {
-  const ctx = context(async url => {
-    assert.match(String(url), /rpc\/flexi_wallet$/)
-    return Response.json({ balance: 340, lifetimeWorkouts: 26 })
+test('onboarding accepts preferences only and delegates ownership to SQL', async () => {
+  const body = { goals: ['stay-consistent'], experienceLevel: 'beginner', weeklyGoal: 2, preferredTime: 'morning', calendarProvider: 'google' }
+  const ctx = context(async (url, init) => {
+    assert.match(String(url), /rpc\/flexi_save_onboarding$/)
+    assert.deepEqual(JSON.parse(String(init?.body)).p_input, body)
+    return Response.json({ ...profile, goals: body.goals, weekly_goal: 2, onboarding_completed: true })
   })
-  const response = await run(request('wallet'), ctx)
-  assert.equal(response.status, 200)
-  assert.match(response.headers.get('cache-control')!, /no-store/)
-  assert.deepEqual((await response.json()).data, { balance: 340, lifetimeWorkouts: 26 })
+  const response = await run(request('onboarding', 'POST', body), ctx)
+  assert.equal(response.status, 200); assert.equal((await response.json()).data.onboardingCompleted, true)
+  assert.equal((await run(request('onboarding', 'POST', { ...body, owner: id }))).status, 400)
+})
+test('detailed workouts and retryable calendar creation preserve contract fields and hide internal payloads', async () => {
+  const details = { activity: 'rowing', intensity: 'intense', focusArea: 'legs', distance: 4.25, distanceUnit: 'km', performedAt: '2025-01-02T02:00:00Z' }
+  const ctx = context(async (url, init) => {
+    if (String(url).includes('flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
+    const body = JSON.parse(String(init?.body)).p_input
+    if (String(url).includes('flexi_log_workout')) {
+      assert.equal(body.performedAt, '2025-01-02T02:00:00.000Z'); assert.equal(body.focusArea, 'legs')
+      assert.equal(body.distance, 4.25); assert.equal(body.distanceUnit, 'km')
+      return Response.json({ workout: { ...workout, activity: body.activity, intensity: body.intensity, focus_area: body.focusArea, performed_at: body.performedAt, distance: body.distance, distance_unit: body.distanceUnit }, replayed: false })
+    }
+    assert.equal(body.requestId, 'plan-retry-123'); assert.equal(body.workoutType, 'mobility')
+    return Response.json({ id, owner: id, title: body.title, starts_at: body.startsAt, ends_at: body.endsAt, timezone: body.timezone, notes: '', status: 'planned', created_at: workout.completed_at, workout_type: body.workoutType, request_id: body.requestId, creation_input: { private: true } })
+  })
+  const result = await run(request('workouts', 'POST', { requestId: 'request-details', title: 'Gym', durationMinutes: 30, ...details }), ctx)
+  assert.equal((await result.json()).data.workout.focusArea, 'legs')
+  const plan = await run(request('calendar', 'POST', { requestId: 'plan-retry-123', title: 'Plan', startsAt: '2026-11-15T14:00:00Z', endsAt: '2026-11-15T15:00:00Z', timezone: 'UTC', workoutType: 'mobility' }), ctx)
+  const data = (await plan.json()).data
+  assert.equal(data.requestId, 'plan-retry-123'); assert.equal(data.creation_input, undefined)
+  assert.equal((await run(request(`calendar/${id}`, 'PATCH', { requestId: 'changed-key' }))).status, 400)
+})
+test('sport workout subtype is validated and returned', async () => {
+  const ctx = context(async (_url, init) => {
+    if (String(_url).includes('flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
+    const body = JSON.parse(String(init?.body)).p_input
+    assert.equal(body.activity, 'sports'); assert.equal(body.sport, 'volleyball')
+    return Response.json({ workout: { ...workout, activity: 'sports', sport_type: body.sport }, replayed: false })
+  })
+  const response = await run(request('workouts', 'POST', {
+    requestId: 'sport-request-123', title: 'Volleyball', durationMinutes: 60,
+    activity: 'sports', sport: 'volleyball',
+  }), ctx)
+  assert.equal((await response.json()).data.workout.sport, 'volleyball')
+})
+test('strength workout preserves muscle groups and individual sets', async () => {
+  const exercises = [
+    {
+      name: 'Bench press',
+      muscleGroup: 'chest',
+      setDetails: [
+        { reps: 10, weightKg: 40 },
+        { reps: 8, weightKg: 45 },
+      ],
+    },
+  ]
+  const ctx = context(async (_url, init) => {
+    if (String(_url).includes('flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
+    const body = JSON.parse(String(init?.body)).p_input
+    assert.deepEqual(body.exercises, exercises)
+    return Response.json({ workout: { ...workout, activity: 'strength', exercises }, replayed: false })
+  })
+  const response = await run(request('workouts', 'POST', {
+    requestId: 'strength-request-123', title: 'Bench press', durationMinutes: 45,
+    activity: 'strength', exercises,
+  }), ctx)
+  assert.deepEqual((await response.json()).data.workout.exercises, exercises)
+})
+test('equipment API rejects unknown slots, malformed IDs and mixed legacy inputs', async () => {
+  for (const input of [{ equipped: { admin: id } }, { equipped: null }, { equipped: { top: 'bad' } }, { equipped: {}, equippedCosmeticId: null }]) {
+    assert.equal((await run(request('character', 'PATCH', input))).status, 400)
+  }
+  let mutated = false
+  const ctx = context(async (url, init) => {
+    if (String(url).includes('flexi_update_profile')) {
+      assert.deepEqual(JSON.parse(String(init?.body)).p_input, { equipped: { top: null } }); mutated = true
+      return Response.json(profile)
+    }
+    return Response.json([])
+  })
+  const response = await run(request('character', 'PATCH', { equipped: { top: null } }), ctx)
+  assert.equal(response.status, 200); assert.equal(mutated, true)
+  assert.deepEqual((await response.json()).data.equippedCosmetics, [])
 })
 
-test('checkout rejects client-supplied amounts and rewards before database writes', async () => {
-  for (const extra of [{ coins: 99999 }, { amountCents: 1 }, { owner: id }, { url: 'https://attacker.example' }]) {
-    const response = await run(request('coins/checkout', 'POST', { packId: 'pocket', requestId: 'checkout-test-123', ...extra }))
-    assert.equal(response.status, 400)
+test('a project missing the integration migration returns a setup error before rendering private data', async (t) => {
+  const originalURL = process.env.NEXT_PUBLIC_SUPABASE_URL, originalKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://supabase.invalid'
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'test-only-key'
+  t.after(() => {
+    if (originalURL === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = originalURL
+    if (originalKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = originalKey
+  })
+  t.mock.method(globalThis, 'fetch', async (url: string | URL) => String(url).includes('/auth/v1/user') ? Response.json({ id }) : Response.json({ ...profile, onboarding_completed: undefined }))
+  await assert.rejects(authenticate(new Request('http://localhost', { headers: { Authorization: 'Bearer test-token' } })), /latest Flexi database migrations/)
+})
+
+test('friends require authentication and validate codes before database calls', async () => {
+  for (const method of ['GET', 'POST']) {
+    const response = await handleAPI(request('friends', method), ['friends'])
+    assert.equal(response.status, 401)
+    assert.equal(response.headers.get('cache-control'), 'private, no-store')
+  }
+  for (const body of [{}, { code: null }, { code: 'short' }, { code: 'GGGGGGGGGGGG' }, { code: 'BBBBBBBBBBBB', owner: id }]) {
+    assert.equal((await run(request('friends', 'POST', body))).status, 400)
   }
 })
-
-test('coin pack listing returns public pricing without exposing provider credentials', async () => {
-  const ctx = context(async url => {
-    assert.match(String(url), /coin_packs\?/)
-    return Response.json([{ id: 'pocket', coins: 100, amount_cents: 99, currency: 'usd', active: true }])
+test('friends API uses authenticated RPCs and normalizes shared codes', async () => {
+  const friend = { id: '00000000-0000-4000-8000-000000000002', displayName: 'Bob', avatar: 'panda', addedAt: '2026-11-20T12:00:00Z' }
+  const ctx = context(async (url, init) => {
+    if (String(url).endsWith('/flexi_friends')) return Response.json({ code: 'AAAAAAAAAAAA', friends: [friend] })
+    assert.match(String(url), /rpc\/flexi_add_friend$/)
+    assert.deepEqual(JSON.parse(String(init?.body)), { p_input: { code: 'BBBBBBBBBBBB' } })
+    return Response.json({ friend, replayed: true })
   })
-  const response = await run(request('coins/packs'), ctx)
-  const data = (await response.json()).data
-  assert.equal(typeof data.enabled, 'boolean')
-  assert.deepEqual(data.packs, [{ id: 'pocket', coins: 100, amountCents: 99, currency: 'usd' }])
+  const get = await run(request('friends'), ctx)
+  assert.equal(get.status, 200)
+  assert.deepEqual((await get.json()).data.friends, [friend])
+  const post = await run(request('friends', 'POST', { code: ' bbbbbbbbbbbb ' }), ctx)
+  assert.equal(post.status, 200)
+  assert.equal(post.headers.get('vary'), 'Authorization')
+  assert.deepEqual((await post.json()).data, { friend, replayed: true })
+  const missing = context(async () => Response.json({ code: 'PT404', message: 'No friend found. Check the code and try again.' }, { status: 404 }))
+  assert.equal((await run(request('friends', 'POST', { code: '000000000000' }), missing)).status, 404)
 })

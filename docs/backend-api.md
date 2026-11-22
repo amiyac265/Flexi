@@ -10,13 +10,13 @@ Start the app with `corepack pnpm dev`, then open **http://localhost:3000/api-do
 4. Expand **GET /profile** or **GET /train**, click **Try it out**, then **Execute**.
 5. To test a write, use **POST /workouts**. Choose a new `requestId` for each intentional workout; reuse the same ID and payload to test retry handling. Copy returned IDs into GET/DELETE operations.
 
-All 18 endpoints include request/response schemas. Requests affect the configured database: use a test account. Swagger's login session is memory-only, separate from the app's persisted login, and expires on reload. Passwords/tokens are not sent to a third-party Swagger validator; UI assets are served by this app. The docs are public, while the API remains authenticated and protected by the same database policies. This adds a developer testing page, not app onboarding.
+All 21 endpoints include request/response schemas. Requests affect the configured database: use a test account. Swagger's login session is memory-only, separate from the app's persisted login, and expires on reload. Passwords/tokens are not sent to a third-party Swagger validator; UI assets are served by this app. The docs are public, while the API remains authenticated and protected by the same database policies. Swagger remains independent of the app’s login and onboarding screens.
 
-Updated November 2, 2026. This standalone Next.js app uses Supabase Postgres and Auth. Start with [backend-setup.md](backend-setup.md) to provision a project and apply the migration. There is no Figma runtime connection or Payload dependency.
+Updated November 14, 2026. This standalone Next.js app uses Supabase Postgres and Auth. Start with [backend-setup.md](backend-setup.md) to provision a project and apply the migration. There is no Figma runtime connection or Payload dependency.
 
 ## Frontend starting point
 
-Use `src/lib/flexi-api.ts`. It has typed methods, attaches the Supabase access token, and normalizes API errors. Call it from browser event handlers/effects; importing it alone does not initialize authentication. The frontend now loads account progress, wallet and shop ownership through these APIs when signed in. Signed-out use is a separate, explicitly labeled local demo wallet. Demo currency is never transferred into account balances or sold for money.
+Use `src/lib/flexi-api.ts`. It has typed methods, attaches the Supabase access token, and normalizes API errors. Call it from browser event handlers/effects; importing it alone does not initialize authentication. The November Figma export is integrated: signup/login/recovery, onboarding, Train, workout history, calendar, character selection, layered outfits, and level-based claims use this client. All personal values come from the API. Social supports adding mutual friends by shared code, alongside the editorial showcase.
 
 ```ts
 import { flexiAPI } from '@/lib/flexi-api'
@@ -50,11 +50,11 @@ Use same-origin `/api` inside this app. No cross-origin API access is enabled. I
 
 Signup/login/logout use **Supabase Auth directly**, through `flexiAPI.signup`, `login`, and `logout`. There are no `/api/users/*` endpoints or Payload Admin accounts. `signup` returns `{ user, requiresEmailConfirmation }`; if confirmation is required, wait for the user to confirm their email before attempting login. `session()` and `onAuthStateChange()` help the frontend render the appropriate signed-in state. Clear cached private data on logout/account changes.
 
-The browser client uses Supabase's standard persisted session and automatic refresh. Every custom API request sends `Authorization: Bearer <access_token>`. Server handlers verify the token using Supabase Auth `getUser()` and forward that same user identity to the Data API. The app uses a publishable key, never a service-role key. Cookies are not an authentication mechanism for these APIs. There is no SSR-protected account UI in this backend task.
+The browser client uses Supabase's standard persisted session and automatic refresh. Every custom API request sends `Authorization: Bearer <access_token>`. Server handlers verify the token using Supabase Auth `getUser()` and forward that same user identity to the Data API. The app uses a publishable key, never a service-role key. Cookies are not an authentication mechanism for these APIs. Private account UI is loaded in the browser after session restoration; server APIs enforce authentication on every request.
 
-For direct API testing, provide the bearer header. Do not log tokens or passwords. Password recovery UI and hosted email delivery must be completed/verified before public launch; signup/login/logout integration is implemented, but a hosted Auth test has not yet been run.
+For direct API testing, provide the bearer header. Do not log tokens or passwords. Signup, email-confirmation notices, login, logout, reset-email requests and recovery-password UI are implemented. Hosted email delivery, redirect URLs and Auth flows still need a dedicated hosted smoke test after applying the new migration. Auth listeners update React state without awaiting other Auth calls; data loads happen in separate effects, following [Supabase Auth event guidance](https://supabase.com/docs/reference/javascript/auth-onauthstatechange).
 
-Home timezone and weekly goal are chosen at signup and fixed for this first release. This avoids silently changing historical reward dates or streak thresholds. Default timezone is UTC; pass the browser's actual IANA timezone during signup. Default weekly goal is 3 workout days. Later editable targets should introduce effective-dated goal history.
+Home timezone is fixed at signup. Weekly goal can be selected during initial onboarding only while no workout has ever been logged, including voided logs. After onboarding or the first workout, it is fixed, preserving historical streak thresholds. Default timezone is UTC; pass the browser's actual IANA timezone during signup. Default weekly goal is 3 workout days. Later editable targets should introduce effective-dated goal history.
 
 ## Custom endpoints
 
@@ -63,20 +63,23 @@ All paths below begin with `/api/flexi`. Success is HTTP 200 with `{ "data": ...
 | Method | Path | Purpose / input |
 |---|---|---|
 | GET | `/train` | Profile, progress recap, latest 5 workouts, next 3 plans, up to 5 news and 5 tutorials |
+| POST | `/onboarding` | `goals`, `experienceLevel`, `weeklyGoal`, `preferredTime`, `calendarProvider`; complete setup or update fitness preferences |
+| GET | `/friends` | Your shareable code and minimal friend summaries |
+| POST | `/friends` | Add a mutual friend with `{ code }`; retries are idempotent |
 | GET | `/profile` | Safe profile fields, no password/session internals |
 | PATCH | `/profile` | `displayName?`, `avatar?` |
 | GET | `/progress` | Totals, level, daily/weekly streaks, weekly progress |
 | GET | `/content?kind=news&page=1&limit=20` | Published content; optional `kind=news|tutorial` |
 | GET | `/workouts?page=1&limit=20` | Completed workout history |
 | GET | `/workouts/:id` | One owned workout, including a voided record when queried explicitly |
-| POST | `/workouts` | Log a completed workout; required `requestId`, `title`, `durationMinutes`; optional `notes`, `exercises` |
+| POST | `/workouts` | Log a completed workout; required `requestId`, `title`, `durationMinutes`; optional `notes`, `exercises`, `activity`, `intensity`, `focusArea`, `performedAt`, paired `distance`/`distanceUnit`, and `sport` |
 | DELETE | `/workouts/:id` | Void a workout; safe to repeat; soft deletion preserves retry identity |
 | GET | `/calendar?from=...&to=...&page=1&limit=20` | Owned entries overlapping the requested interval; cancelled entries excluded |
-| POST | `/calendar` | Required `title`, `startsAt`, `endsAt`, `timezone`; optional `notes`, `status` |
-| PATCH | `/calendar/:id` | Any subset of the same editable calendar fields |
+| POST | `/calendar` | Required `title`, `startsAt`, `endsAt`, `timezone`; optional `notes`, `status`, `workoutType`, `requestId` |
+| PATCH | `/calendar/:id` | Any subset of calendar fields except immutable `requestId` |
 | DELETE | `/calendar/:id` | Cancel an entry; safe to repeat |
 | GET | `/character` | Avatar, level, evolution state, preset image path, equipped cosmetic |
-| PATCH | `/character` | `avatar?`, `equippedCosmeticId?`; null unequips |
+| PATCH | `/character` | `avatar?`, `equipped?` slot map, or legacy `equippedCosmeticId?`; null removes equipment |
 | GET | `/shop?page=1&limit=20` | Active cosmetics, each with `owned` and `unlocked` flags; current user level |
 | POST | `/shop/:id/claim` | Buy a level-eligible cosmetic for its catalog coinPrice; retries never charge twice |
 | GET | `/inventory?page=1&limit=20` | Owned cosmetics, with populated item where still accessible |
@@ -96,13 +99,21 @@ Example request:
   "durationMinutes": 40,
   "notes": "Felt good",
   "exercises": [
-    { "name": "Push-ups", "sets": 3, "reps": 10, "weightKg": 0 },
-    { "name": "Plank", "durationSeconds": 60 }
+    {
+      "name": "Bench press",
+      "muscleGroup": "chest",
+      "setDetails": [
+        { "reps": 10, "weightKg": 40 },
+        { "reps": 8, "weightKg": 45 }
+      ]
+    }
   ]
 }
 ```
 
-`exercises` is optional and limited to 30 summaries. This release records a completed workout directly; it does not implement live per-set autosave, workout templates, or a start/finish state machine. Duration must be an integer from 1 to 1,440 minutes. The server assigns owner, completion time, and local date. Client-submitted XP, level, owner, completion date, or timestamps are rejected.
+`exercises` is limited to 30 entries. New strength workouts require at least one exercise with `muscleGroup` (`chest|back|shoulders|biceps|triceps|legs|glutes|core`) and 1–20 `setDetails`; every set requires integer `reps` and `weightKg` from 0–2,000. Legacy aggregate exercise summaries remain readable and retryable. This release records a completed workout directly; it does not implement live per-set autosave, workout templates, or a start/finish state machine. Duration must be an integer from 1 to 1,440 minutes. The server assigns owner and `completedAt` (receipt time). Optional `performedAt` accepts an offset-qualified ISO instant from 1970 through now; otherwise it defaults to receipt time. SQL derives `localDate` from that time in the fixed account timezone. These values cannot be edited after creation. Client-submitted XP, level, owner, `localDate` and `completedAt` are rejected.
+
+The imported form also stores `activity` (`strength|running|walking|cycling|rowing|swimming|elliptical|stair-climber|hiking|jump-rope|yoga|sports|other`), optional `intensity` (`light|moderate|intense`), and `focusArea` (`arms|chest|legs|full-body`). New cardio workouts require `distance` (0.001–10,000) and `distanceUnit` (`mi|km|m|yd`) together. New sport workouts use activity `sports` and require `sport` (`basketball|soccer|football|tennis|volleyball|baseball-softball|hockey|golf|pickleball|other`). Activity and focus default to `other` and `full-body`; intensity may be null. These details do not change the reward formula. A backdated workout contributes to its actual local day, not the day it was submitted. Historical records retain their original local dates and retry payloads.
 
 POST returns `{ workout, replayed, wallet }`; `workout.coinReward` records the original award. For a replay, show no new reward even though the stored reward remains on the record. A repeat with the same user/request ID and normalized payload returns the existing record. A different payload with the same ID returns 409. Retrying a voided workout returns its voided state; use a new ID for an intentional replacement. IDs deduplicate within each account.
 
@@ -138,19 +149,23 @@ Refetch `train`, `progress`, and `character` after logging or voiding; refetch `
 
 Use ISO timestamps with a `Z` or numeric offset. Entries may last up to 24 hours. `status` is `planned`, `completed`, or `cancelled`. Range queries require `from < to` and at most 93 days; without a range, the API uses the previous 7 and next 30 days.
 
-Overlaps and past entries are allowed for this prototype. Partial edits merge inside a transaction; concurrent edits to the same field use the last committed value. No slot recommendation, recurrence, external calendar sync, reminder worker, or automatic workout linkage is implemented. Marking a calendar entry completed **does not** award XP; log an actual workout separately. Calendar create is not idempotent; after an uncertain network timeout, reload before intentionally creating another entry.
+Overlaps and past entries are allowed for this prototype. Partial edits merge inside a transaction; concurrent edits to the same field use the last committed value. No slot recommendation, recurrence, external calendar sync, reminder worker, or automatic workout linkage is implemented. Marking a calendar entry completed **does not** award XP; log an actual workout separately. Calendar create accepts an optional `requestId` using the workout-key format. Reuse the same ID and normalized payload after uncertain outcomes; a changed payload returns 409. A retry after edits/cancellation returns the same record in its current state. Omitted keys preserve the original non-idempotent API behavior. `requestId` cannot be changed by PATCH. `workoutType` is `strength|cardio|mobility|sports|recovery`, default `strength`.
+
+The UI loads all pages for the visible month, includes overlapping overnight events, and uses the account timezone for date/time inputs. Nonexistent DST wall-clock times are rejected; ambiguous times use the first occurrence resolved by the timezone converter. Google export is an explicit link in the saved plan’s agenda and does not establish sync. The export includes that plan’s title, notes, time range, and timezone.
 
 ## Cosmetics and character
 
 Use the existing `bunny`, `panda`, `turtle`, and `deer` characters. Level 5 switches to the existing evolved image. The character endpoint returns the appropriate `/avatars/...` image path.
 
-Cosmetics have a `minimumLevel`. An eligible user can buy an item once for its server-controlled `coinPrice` and equip it. Existing cosmetics default to zero cost; existing ownership is preserved. One cosmetic is equipped at a time in this release; `slot` is descriptive metadata for future layering. The server verifies inventory ownership before equipping. Archiving a catalog item hides it from the shop and character response while retaining the inventory record. Inventory returns `item: null` for an unavailable/archived catalog item; handle that state. Content and cosmetics expose optional `imageUrl` HTTPS strings instead of Payload Media relationships.
+Cosmetics have a `minimumLevel`. An eligible user can claim an item once and equip it. Five outfit slots are supported: `top`, `bottom`, `shoes`, `accessory`, and `background`. `PATCH /character` accepts a partial `equipped` map, for example `{"equipped":{"top":"ITEM_UUID","shoes":null}}`. Changes merge under the profile lock and each item must be owned, active, and match its slot. Legacy `hat`/`outfit` catalog slots map to `accessory`/`top` through `equipmentSlot`. Character returns `equippedCosmetics` for all active layers and the legacy `equippedCosmetic`. The old `equippedCosmeticId` input replaces the whole outfit with one item; null clears it. Do not combine the two equipment inputs.
+
+Catalog DTOs also include `category` (`clothing|accessories|backgrounds|special`), `styleKey` (lowercase letters/digits/hyphens, up to 60 characters), and validated six-digit hex `primaryColor`/`accentColor`. Existing IDs, claims and equipment are preserved by the migration. The UI uses these fields for its garment previews. Archiving a catalog item hides it from the shop and character response while retaining the inventory record. Inventory returns `item: null` for an unavailable/archived catalog item; handle that state. Content and cosmetics expose optional `imageUrl` HTTPS strings instead of Payload Media relationships.
 
 Coin purchases debit the wallet atomically. Paid USD coin packs use Stripe Checkout with verified webhook fulfillment; setup and explicit activation are required. Trading and battle passes remain deferred.
 
 ## Editorial content and catalog
 
-Manage `training_content` and `cosmetic_items` through Supabase Dashboard Table Editor. App users have no write privileges to these tables. The optional `supabase/seed.sql` contains two starter cosmetics and an app-use tutorial. It does not seed fake news, accounts, or exercise histories.
+Manage `training_content` and `cosmetic_items` through Supabase Dashboard Table Editor. App users have no write privileges to these tables. The optional `supabase/seed.sql` contains six starter cosmetics and an app-use tutorial. It does not seed fake news, accounts, or exercise histories.
 
 For content, set `status = published` and a `published_at` date that has arrived. For cosmetics, set `active = true` and a `minimum_level`. Optional `image_url` fields accept HTTPS URLs, including public Supabase Storage URLs managed by your team. User uploads and storage-bucket policies are not part of this MVP. Preset animal avatars already live in `public/avatars`.
 
@@ -158,36 +173,35 @@ News is editorial content, not an automatically fetched live news service. Empty
 
 ## Implementation and verification
 
-- Schema: `supabase/migrations/20261102000000_flexi_core.sql` (seven app tables, including the preserved editorial leaderboard).
-- Routes: `src/app/api/flexi/[...path]/route.ts` delegates to 18 handlers in `src/backend/endpoints.ts`.
+- Schema: `supabase/migrations/20261102000000_flexi_core.sql` and `supabase/migrations/20261114000000_frontend_integration.sql` (seven app tables, including the preserved editorial leaderboard).
+- Routes: `src/app/api/flexi/[...path]/route.ts` delegates to 19 handlers in `src/backend/endpoints.ts`.
 - API DTOs/mapping: `src/backend/data.ts`; SQL row/RPC types: `src/backend/database.types.ts`.
 - All app tables use RLS. Personal data is visible only to its owner. Ordinary app roles have SELECT grants only; writes go through authenticated database functions.
-- Workout logging, voiding, calendar mutations, profile changes, and cosmetic claims are transactional. Private helper functions are not exposed through the Data API. Same-account mutations lock the profile first; unique keys also enforce retry identity and one claim per item.
+- Workout logging, voiding, calendar mutations, profile changes, and cosmetic claims are transactional. Private helper functions are not exposed through the Data API. Reward-bearing mutations lock the profile first; unique keys also enforce retry identity and one claim per item.
 - Progress uses a database aggregation over all owned completed days, avoiding the Data API row cap. XP and streaks are computed from those dates, with no editable balance.
 
-Run `pnpm typecheck`, `pnpm test:backend`, `pnpm test:database`, and `pnpm build`. The HTTP tests mock Supabase network responses. Database tests execute real PostgreSQL policies/functions in PGlite with Auth schema stand-ins; its queued requests are serialized. `pnpm test:database:native` adds actual separate-connection race tests when native PostgreSQL tools can run. Native execution was blocked by sandbox shared-memory permissions in this session.
+Run `pnpm typecheck`, `pnpm test:backend`, `pnpm test:database`, and `pnpm build`. The HTTP tests mock Supabase network responses. Database tests execute real PostgreSQL policies/functions in PGlite with Auth schema stand-ins; its queued requests are serialized. `pnpm test:database:native` adds actual separate-connection race tests when native PostgreSQL tools can run. Native PostgreSQL checks passed outside the sandbox, including eight simultaneous workout retries, cosmetic claims and calendar retries.
 
 Use `pnpm smoke:api` after setting up a hosted project and a dedicated test account, as described in the setup guide. Verify signup/email confirmation/login/logout, real persistence after reload, and account isolation there. A successful local build does not mean a cloud database has been provisioned.
 
-The frontend `FlexiApp.tsx` still uses demo personal progress values and is not yet wired to this client. The existing leaderboard display now reads Supabase's editorial `leaderboard_entries`; no live user rankings were added. Friends, friend activity, community competition, battle pass, external news ingestion, notifications, account deletion/export, advanced onboarding/preferences, and mobile health integrations remain future work.
+The frontend restores the Supabase session and mounts private data by account ID. Mutating calls verify that the session still belongs to that account. Account changes unmount cached UI and clear that account’s session-storage retry drafts. No private progress or inventory is read from the Figma export’s old local-storage keys. Workout and calendar submissions retain their payload and request ID in session storage until a confirmed result, surviving reloads in the same tab. Uncertain submissions are frozen and retried as-is. Successful writes are cleared before refreshing, so a refresh failure cannot cause a second intentional submission.
+
+Friend activity, community competition, battle passes, external news ingestion, notifications, account deletion/export, calendar sync, and mobile health integrations remain future work.
+
+## Onboarding preferences
+
+`POST /onboarding` requires all five fields. Goals are 1–6 values from `build-muscle`, `get-stronger`, `lose-weight`, `improve-endurance`, `stay-consistent`, `move-better`. Experience is `beginner|intermediate|advanced`; preferred time is `morning|midday|evening|flexible`; calendar preference is `google|apple|none`. Weekly goal is an integer 1–7. Repeating the same values is safe. Goals, experience and preferences remain editable; changing a locked weekly goal returns 409. Calendar preference does not grant provider access. Profiles return these values plus `onboardingCompleted`.
+
+## Frontend verification
+
+`pnpm test:frontend` starts an isolated Next.js dev server using fake Supabase configuration and browser-intercepted Auth/API fixtures. It exercises the real components and client but does not contact hosted databases or verify hosted email delivery. Run `pnpm exec playwright install chromium` once, or set `PLAYWRIGHT_CHANNEL=chrome` to use installed Chrome. See `tests/frontend/` and `docs/frontend-integration-plan.md`.
 
 
-## Coin economy
+## Friends (demo)
 
-Apply `20261116000000_coin_economy.sql` after the core migration. It adds wallets, an append-only audit ledger, price columns, a six-item shop catalog, USD coin packs and immutable payment orders.
+- `GET /api/flexi/friends` → `{ data: { code, friends: [{ id, displayName, avatar, addedAt }] } }`. Returns your stable 12-character uppercase hex code and an unpaginated friend list, newest first.
+- `POST /api/flexi/friends` with `{ "code": "A1B2C3D4E5F6" }` → `{ data: { friend: { id, displayName, avatar, addedAt }, replayed } }`. Trims the code and accepts either case. Unknown fields and malformed/self codes return 400; an unknown code returns 404.
 
-| Method | Path | Contract |
-| --- | --- | --- |
-| GET | `/wallet` | `{ balance, lifetimeWorkouts }`, account private |
-| GET | `/coins/packs` | `{ enabled, packs: [{ id, coins, amountCents, currency }] }` |
-| POST | `/coins/checkout` | `{ packId, requestId }` → `{ orderId, url }`; 503 until configured |
-| GET | `/coins/orders/:id` | Owned order `{ id, status: 'pending' \| 'paid', coins }` |
-| POST | `/shop/:id/claim` | Returns `{ inventory, replayed, wallet }`, debits authoritative `coinPrice` exactly once |
+Sharing a code allows another signed-in account to connect both users immediately. No request/accept stage, discovery by email, removal, chat, shared workouts, or XP rewards are included. The unordered user pair is the retry identity: repeated or reverse-direction adds return the existing connection (`replayed: true`). Database uniqueness handles concurrent adds.
 
-A new workout entry earns **10 coins**, or **50 total** at lifetime entry ordinals **25, 50, 75 and 100**. Entry 125 and later multiples are ordinary 10-coin entries. Same-day entries each earn coins, independently of daily XP. Reusing a workout request ID never awards again. Voiding preserves already-earned coins and its lifetime ordinal; replacements get a new ordinal. The completed-workout count may therefore differ from `lifetimeWorkouts`. This avoids negative wallets after spent rewards and repeating milestones by voiding. Existing completed entries are backfilled in completion-time/ID order; previously voided entries occupy ordinals but are not retroactively rewarded.
-
-The database serializes reward, cosmetic purchase and payment writes using a per-profile lock. Apps cannot directly modify balances, rewards, ownership, order amounts or paid status. Paid orders snapshot coin quantity, USD amount and owner. Duplicate webhook deliveries return the previous fulfillment and do not add more coins. A session cannot fulfill multiple orders. App APIs always use the publishable key plus the authenticated user's bearer token; only the separate, signed-payment Edge Function may call the service-role-only fulfillment RPC.
-
-The client retains an uncertain workout's request ID and payload for retry, refreshes account data after saving, and displays reward feedback only for a new record. Local demo actions are stored on that browser only and never credited to signed-in accounts. Purchases do not grant XP or leaderboard points.
-
-See [coin-payments.md](coin-payments.md) for payment activation, test cases and current refund limitations.
+Both endpoints require the user's bearer token and return `private, no-store`. RPCs derive the caller from `auth.uid()`. RLS permits participants to read only their own connections; clients cannot mutate friendship rows or friend codes directly. Other profiles remain private; the RPC shares only the four documented friend fields, never email, codes, workout notes or preferences.
