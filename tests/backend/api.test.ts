@@ -42,6 +42,7 @@ test('workout HTTP contract normalizes input, uses RPC and hides internal fields
   let calls = 0
   const ctx = context(async (url, init) => {
     calls++
+    if (String(url).endsWith('/rpc/flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
     assert.match(String(url), /rpc\/flexi_log_workout$/)
     const body = JSON.parse(String(init?.body))
     assert.deepEqual(body.p_input, { requestId: 'request-1234', title: 'Gym', durationMinutes: 30, exercises: [] })
@@ -51,13 +52,14 @@ test('workout HTTP contract normalizes input, uses RPC and hides internal fields
   assert.equal(response.status, 200)
   const result = (await response.json()).data
   assert.equal(result.replayed, true)
+  assert.deepEqual(result.wallet, { balance: 10, lifetimeWorkouts: 1 })
   assert.equal(result.workout.durationMinutes, 30)
   assert.equal(result.workout.owner, undefined)
   assert.equal(result.workout.completion_input, undefined)
-  assert.equal(calls, 1)
+  assert.equal(calls, 2)
 })
 test('bad inputs are rejected before calling Supabase', async () => {
-  for (const extra of [{ owner: id }, { xp: 9999 }, { completedAt: '2000-01-01' }]) {
+  for (const extra of [{ owner: id }, { xp: 9999 }, { coins: 9999 }, { coinReward: 50 }, { completedAt: '2000-01-01' }]) {
     assert.equal((await run(request('workouts', 'POST', { requestId: 'request-1234', title: 'Gym', durationMinutes: 30, ...extra }))).status, 400)
   }
   assert.equal((await run(request('profile', 'PATCH', { weeklyGoal: 1 }))).status, 400)
@@ -143,6 +145,7 @@ test('onboarding accepts preferences only and delegates ownership to SQL', async
 test('detailed workouts and retryable calendar creation preserve contract fields and hide internal payloads', async () => {
   const details = { activity: 'rowing', intensity: 'intense', focusArea: 'legs', distance: 4.25, distanceUnit: 'km', performedAt: '2025-01-02T02:00:00Z' }
   const ctx = context(async (url, init) => {
+    if (String(url).includes('flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
     const body = JSON.parse(String(init?.body)).p_input
     if (String(url).includes('flexi_log_workout')) {
       assert.equal(body.performedAt, '2025-01-02T02:00:00.000Z'); assert.equal(body.focusArea, 'legs')
@@ -161,6 +164,7 @@ test('detailed workouts and retryable calendar creation preserve contract fields
 })
 test('sport workout subtype is validated and returned', async () => {
   const ctx = context(async (_url, init) => {
+    if (String(_url).includes('flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
     const body = JSON.parse(String(init?.body)).p_input
     assert.equal(body.activity, 'sports'); assert.equal(body.sport, 'volleyball')
     return Response.json({ workout: { ...workout, activity: 'sports', sport_type: body.sport }, replayed: false })
@@ -183,6 +187,7 @@ test('strength workout preserves muscle groups and individual sets', async () =>
     },
   ]
   const ctx = context(async (_url, init) => {
+    if (String(_url).includes('flexi_wallet')) return Response.json({ balance: 10, lifetimeWorkouts: 1 })
     const body = JSON.parse(String(init?.body)).p_input
     assert.deepEqual(body.exercises, exercises)
     return Response.json({ workout: { ...workout, activity: 'strength', exercises }, replayed: false })

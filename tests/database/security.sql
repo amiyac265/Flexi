@@ -24,7 +24,7 @@ insert into training_content(slug,title,kind,summary,status,published_at) values
 set role anon;
 select expect_error('select * from profiles','42501');
 select expect_error('select flexi_log_workout(''{}'')','42501');
-do $$ begin assert (select count(*) from training_content) = 1; assert (select count(*) from cosmetic_items) = 3; end $$;
+do $$ begin assert (select count(*) from training_content) = 1; assert (select count(*) from cosmetic_items) = 9; end $$;
 select 'PASS: anonymous callers can only read published/active catalogs, not accounts or mutations.';
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';

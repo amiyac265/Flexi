@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { Icon, FittedAvatar, type ShopItem, type Equipped } from './FlexiVisuals'
 import './shop.css'
+import { CoinPacksDialog } from './EconomyDialogs'
+import type { useCoinEconomy } from './useCoinEconomy'
 
 export default function ShopTab({
   avatar,

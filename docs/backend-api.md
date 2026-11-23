@@ -81,7 +81,7 @@ All paths below begin with `/api/flexi`. Success is HTTP 200 with `{ "data": ...
 | GET | `/character` | Avatar, level, evolution state, preset image path, equipped cosmetic |
 | PATCH | `/character` | `avatar?`, `equipped?` slot map, or legacy `equippedCosmeticId?`; null removes equipment |
 | GET | `/shop?page=1&limit=20` | Active cosmetics, each with `owned` and `unlocked` flags; current user level |
-| POST | `/shop/:id/claim` | Claim a level-eligible cosmetic; duplicate claims return existing inventory |
+| POST | `/shop/:id/claim` | Buy a level-eligible cosmetic for its catalog coinPrice; retries never charge twice |
 | GET | `/inventory?page=1&limit=20` | Owned cosmetics, with populated item where still accessible |
 
 Paginated responses contain `docs`, `totalDocs`, `page`, `totalPages`, and `hasNextPage`. Default limit is 20; maximum is 100. Follow `hasNextPage` for complete history, calendar, or inventory. Train deliberately returns a small preview, not all records.
@@ -115,7 +115,7 @@ Example request:
 
 The imported form also stores `activity` (`strength|running|walking|cycling|rowing|swimming|elliptical|stair-climber|hiking|jump-rope|yoga|sports|other`), optional `intensity` (`light|moderate|intense`), and `focusArea` (`arms|chest|legs|full-body`). New cardio workouts require `distance` (0.001–10,000) and `distanceUnit` (`mi|km|m|yd`) together. New sport workouts use activity `sports` and require `sport` (`basketball|soccer|football|tennis|volleyball|baseball-softball|hockey|golf|pickleball|other`). Activity and focus default to `other` and `full-body`; intensity may be null. These details do not change the reward formula. A backdated workout contributes to its actual local day, not the day it was submitted. Historical records retain their original local dates and retry payloads.
 
-POST returns `{ workout, replayed }`. A repeat with the same user/request ID and normalized payload returns the existing record. A different payload with the same ID returns 409. Retrying a voided workout returns its voided state; use a new ID for an intentional replacement. IDs deduplicate within each account.
+POST returns `{ workout, replayed, wallet }`; `workout.coinReward` records the original award. For a replay, show no new reward even though the stored reward remains on the record. A repeat with the same user/request ID and normalized payload returns the existing record. A different payload with the same ID returns 409. Retrying a voided workout returns its voided state; use a new ID for an intentional replacement. IDs deduplicate within each account.
 
 Progress fields:
 
@@ -131,7 +131,7 @@ currentWeekPending, lastWorkoutDate
 - `level = 1 + floor(totalXp / 500)`; level progress is 0–499 XP, not the demo UI's previous 0–99 scale.
 - Weekly streak counts consecutive Monday-start weeks meeting the signup goal. An unfinished current week preserves the streak ending last week. Daily streak is also available for the existing day-streak UI.
 - Void removes workout contribution immediately. If another completed workout remains on that date, its daily XP remains. No separately mutable XP counter exists, so duplicate requests and void retries cannot double-adjust a balance.
-- Already claimed cosmetics stay owned if a workout is later voided. There is no competitive economy, spendable XP, or purchase currency in this release.
+- Already claimed cosmetics stay owned if a workout is later voided. XP and leaderboard points are separate from the spendable coin wallet. See the coin economy below.
 
 Refetch `train`, `progress`, and `character` after logging or voiding; refetch `shop` when eligibility may change. Do not optimistically award fixed XP in the browser: a second same-day log grants none. Persist the current draft/request ID until the request outcome is known.
 
@@ -161,7 +161,7 @@ Cosmetics have a `minimumLevel`. An eligible user can claim an item once and equ
 
 Catalog DTOs also include `category` (`clothing|accessories|backgrounds|special`), `styleKey` (lowercase letters/digits/hyphens, up to 60 characters), and validated six-digit hex `primaryColor`/`accentColor`. Existing IDs, claims and equipment are preserved by the migration. The UI uses these fields for its garment previews. Archiving a catalog item hides it from the shop and character response while retaining the inventory record. Inventory returns `item: null` for an unavailable/archived catalog item; handle that state. Content and cosmetics expose optional `imageUrl` HTTPS strings instead of Payload Media relationships.
 
-No card payments, token balance, item trading, currency deduction, or battle pass exists. The button should say “Claim” or “Unlock,” not imply a paid purchase.
+Coin purchases debit the wallet atomically. Paid USD coin packs use Stripe Checkout with verified webhook fulfillment; setup and explicit activation are required. Trading and battle passes remain deferred.
 
 ## Editorial content and catalog
 

@@ -1,4 +1,5 @@
 /** Browser client for frontend integration. Supabase handles session persistence/refresh. */
+import type { Wallet } from '../backend/database.types.ts'
 import type { CalendarEvent, CosmeticItem, Page, TrainingContent, UserCosmetic, UserProfile, WorkoutLog } from '../backend/data.ts'
 import { AVATARS, integer, text, timezone, type Avatar, type CalendarInput, type Progress, type WorkoutInput, type Equipment, type OnboardingInput } from '../backend/domain.ts'
 import type { Friends, AddFriendResult } from '../backend/database.types.ts'
@@ -75,6 +76,10 @@ export function createFlexiAPI(base = '/api', expectedUserId?: string) {
     },
     session: () => browserSupabase().auth.getSession(),
     onAuthStateChange: (callback: Parameters<ReturnType<typeof browserSupabase>['auth']['onAuthStateChange']>[0]) => browserSupabase().auth.onAuthStateChange(callback),
+    wallet: () => request<Wallet>('/flexi/wallet'),
+    coinPacks: () => request<{ enabled: boolean; packs: { id: string; coins: number; amountCents: number; currency: string }[] }>('/flexi/coins/packs'),
+    coinCheckout: (packId: string, requestId: string) => request<{ orderId: string; url: string }>('/flexi/coins/checkout', 'POST', { packId, requestId }),
+    coinOrder: (id: string) => request<{ id: string; status: 'pending' | 'paid'; coins: number }>(`/flexi/coins/orders/${encodeURIComponent(id)}`),
     friends: () => request<Friends>('/flexi/friends'),
     addFriend: (code: string) => request<AddFriendResult>('/flexi/friends', 'POST', { code }),
     train: () => request<Train>('/flexi/train'),
@@ -85,7 +90,7 @@ export function createFlexiAPI(base = '/api', expectedUserId?: string) {
     content: (kind?: 'news' | 'tutorial', page = 1) => request<Page<TrainingContent>>(`/flexi/content${query({ kind, page })}`),
     workouts: (page = 1) => request<Page<PublicWorkout>>(`/flexi/workouts${query({ page })}`),
     workout: (id: string) => request<PublicWorkout>(`/flexi/workouts/${encodeURIComponent(id)}`),
-    logWorkout: (input: Omit<WorkoutInput, 'exercises'> & { exercises?: WorkoutInput['exercises'] }) => request<{ workout: PublicWorkout; replayed: boolean }>('/flexi/workouts', 'POST', input),
+    logWorkout: (input: Omit<WorkoutInput, 'exercises'> & { exercises?: WorkoutInput['exercises'] }) => request<{ workout: PublicWorkout; replayed: boolean; wallet: Wallet }>('/flexi/workouts', 'POST', input),
     voidWorkout: (id: string) => request<PublicWorkout>(`/flexi/workouts/${encodeURIComponent(id)}`, 'DELETE'),
     calendar: (from: string, to: string, page = 1) => request<Page<CalendarEvent>>(`/flexi/calendar${query({ from, to, page })}`),
     createCalendarEvent: (input: Omit<CalendarInput, 'status'> & { status?: CalendarInput['status'] }) => request<CalendarEvent>('/flexi/calendar', 'POST', input),
@@ -95,9 +100,8 @@ export function createFlexiAPI(base = '/api', expectedUserId?: string) {
     updateCharacter: (input: { avatar?: Avatar; equippedCosmeticId?: string | null; equipped?: Equipment }) => request<Character>('/flexi/character', 'PATCH', input),
     shop: (page = 1) => request<Page<ShopItem> & { level: number }>(`/flexi/shop${query({ page })}`),
     inventory: (page = 1) => request<Page<PopulatedInventory>>(`/flexi/inventory${query({ page })}`),
-    claimCosmetic: (id: string) => request<{ inventory: UserCosmetic; replayed: boolean }>(`/flexi/shop/${encodeURIComponent(id)}/claim`, 'POST', {}),
+    claimCosmetic: (id: string) => request<{ inventory: UserCosmetic; replayed: boolean; wallet: Wallet }>(`/flexi/shop/${encodeURIComponent(id)}/claim`, 'POST', {}),
   }
 }
 
 export const flexiAPI = createFlexiAPI()
-

@@ -1,3 +1,4 @@
+import { coinCheckoutEnabled, createCoinCheckout, requireCoinCheckout } from './coin-checkout.ts'
 import { AVATARS, EQUIPMENT_SLOTS, BackendError, allowFields, calendarInput, instant, object, text, workoutInput, onboardingInput } from './domain.ts'
 import { calendarDTO, contentDTO, cosmeticDTO, inventoryDTO, paginated, profileDTO, progressFor, unwrap, workoutDTO, type DB } from './data.ts'
 import type { ProfileRow } from './database.types.ts'
@@ -115,7 +116,7 @@ endpoint('workouts', 'GET', async (req, { db }) => {
 endpoint('workouts/:id', 'GET', async (_req, { db }, id) => workoutDTO(unwrap(await db.from('workout_logs').select('*').eq('id', uuid(id)).maybeSingle())))
 endpoint('workouts', 'POST', async (req, { db }) => {
   const result = unwrap(await db.rpc('flexi_log_workout', { p_input: workoutInput(await readBody(req)) }))
-  return { workout: workoutDTO(result.workout), replayed: result.replayed }
+  return { workout: workoutDTO(result.workout), replayed: result.replayed, wallet: unwrap(await db.rpc('flexi_wallet', {})) }
 })
 endpoint('workouts/:id', 'DELETE', async (_req, { db }, id) => workoutDTO(unwrap(await db.rpc('flexi_void_workout', { p_id: uuid(id) }))))
 endpoint('calendar', 'GET', async (req, { db }) => {
@@ -156,7 +157,26 @@ endpoint('inventory', 'GET', async (req, { db }) => {
 })
 endpoint('shop/:id/claim', 'POST', async (_req, { db }, id) => {
   const result = unwrap(await db.rpc('flexi_claim_cosmetic', { p_id: uuid(id) }))
-  return { inventory: inventoryDTO(result.inventory), replayed: result.replayed }
+  return { inventory: inventoryDTO(result.inventory), replayed: result.replayed, wallet: result.wallet }
+})
+
+endpoint('wallet', 'GET', async (_req, { db }) => unwrap(await db.rpc('flexi_wallet', {})))
+endpoint('coins/packs', 'GET', async (_req, { db }) => ({
+  enabled: coinCheckoutEnabled(),
+  packs: unwrap(await db.from('coin_packs').select('*').order('coins')).map(p => ({ id: p.id, coins: p.coins, amountCents: p.amount_cents, currency: p.currency })),
+}))
+endpoint('coins/checkout', 'POST', async (req, { db }) => {
+  const input = await readBody(req)
+  allowFields(input, ['packId', 'requestId'])
+  const pack = text(input.packId, 'packId', 80), key = text(input.requestId, 'requestId', 80)
+  if (!/^[a-zA-Z0-9_-]{8,80}$/.test(key)) throw new BackendError('INVALID_INPUT', 'Invalid requestId.')
+  requireCoinCheckout()
+  const order = unwrap(await db.rpc('flexi_create_coin_order', { p_pack: pack, p_request_id: key }))
+  return createCoinCheckout(order)
+})
+endpoint('coins/orders/:id', 'GET', async (_req, { db }, id) => {
+  const order = unwrap(await db.from('coin_orders').select('*').eq('id', uuid(id)).maybeSingle())
+  return { id: order.id, status: order.status, coins: order.coins }
 })
 
 // Public route metadata lets contract tests detect missing or stale OpenAPI operations.
