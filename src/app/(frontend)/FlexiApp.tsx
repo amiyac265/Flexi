@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react'
 import { flexiAPI, FlexiAPIError, type Train, type createFlexiAPI } from '@/lib/flexi-api'
 import {
+  addDays,
   calendarInput,
   dateKey,
   workoutInput,
@@ -26,6 +27,7 @@ import {
 import ShopTab from './ShopTab'
 import FriendsPanel from './FriendsPanel'
 import { AvatarArt, FittedAvatar, type ShopItem, type Equipped } from './FlexiVisuals'
+import './home.css'
 
 const avatars = [
   { name: 'Pip', animal: 'Bunny', key: 'bunny', trait: 'Quick starter' },
@@ -323,10 +325,16 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
     )
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand />
+      <header className="site-header">
+        <button type="button" className="wordmark" aria-label="Flexi home" onClick={() => setTab('home')}>
+          <span className="brand-symbol">
+            <Icon name="leaf" size={18} />
+          </span>
+          FLEXI<span className="wordmark-dot">.</span>
+        </button>
+        <span className="header-motto">A little movement. A little more you.</span>
         <button
-          className="mini-profile"
+          className="header-avatar"
           aria-label="Open your profile"
           onClick={() => setTab('profile')}
         >
@@ -363,9 +371,15 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
               feedback={feedback}
               shopItems={shopItems}
               equipped={equipped}
+              history={history}
               onWorkout={() => setWorkoutTypeOpen(true)}
               train={train}
               onProfile={() => setTab('profile')}
+              onSocial={() => setTab('social')}
+              onSchedule={(date) => {
+                setScheduleDate(date)
+                setScheduleOpen(true)
+              }}
             />
           )}
           {tab === 'social' && <SocialTab players={players} api={api} />}
@@ -522,9 +536,12 @@ function HomeTab({
   feedback,
   shopItems,
   equipped,
+  history,
   onWorkout,
   train,
   onProfile,
+  onSocial,
+  onSchedule,
 }: {
   avatar: (typeof avatars)[number]
   evolved: boolean
@@ -533,154 +550,297 @@ function HomeTab({
   feedback: string
   shopItems: ShopItem[]
   equipped: Equipped
+  history: WorkoutLog[]
   onWorkout: () => void
   train: Train
   onProfile: () => void
+  onSocial: () => void
+  onSchedule: (date: string) => void
 }) {
+  const zone = train.profile.timezone
+  const today = dateKey(new Date(), zone)
+  const weekEnd = addDays(progress.weekStart, 6)
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(progress.weekStart, index))
+  const completedDays = new Set(
+    history.filter((workout) => workout.status === 'completed').map((workout) => workout.localDate),
+  )
+  const nextPlan = train.upcomingWorkouts[0]
+  const recent = (train.recentWorkouts.length ? train.recentWorkouts : history).slice(0, 2)
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    timeZone: zone,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+  const planDate = nextPlan ? addDays(dateKey(new Date(nextPlan.startsAt), zone), 1) : today
   return (
-    <>
-      <section className="hero-card">
-        <div className="hero-copy">
-          <span className="eyebrow">
-            LEVEL {progress.level} · {evolved ? 'POWERED UP' : 'RISING ROOKIE'}
-          </span>
-          <h1>
-            Keep showing up,
-            <br />
-            <em>keep growing.</em>
-          </h1>
-          <p>
-            {evolved
-              ? `${avatar.name} evolved! Keep training to master this stronger form.`
-              : `${avatar.name} is getting stronger with every rep.`}
-          </p>
-          <div className="progress-label">
-            <span>Level progress</span>
-            <b>{progress.xpIntoLevel} / 500 XP</b>
-          </div>
-          <div className="progress">
-            <i style={{ width: `${progress.levelProgressPercent}%` }} />
-          </div>
-          <button className="primary" onClick={onWorkout}>
-            <Icon name="plus" />
-            Log a workout
-          </button>
+    <div className="home-page">
+      <section className="home-heading">
+        <div>
+          <p className="home-eyebrow">YOUR PACE. YOUR PROGRESS.</p>
+          <h1>Small steps. Real progress.</h1>
+          <p className="home-lede">You don’t have to do it all. Just keep showing up.</p>
         </div>
-        <div className={`avatar-stage ${feedback} ${focus ? `focus-${focus}` : ''}`}>
-          <span className="xp-pop">+XP</span>
-          <span className="level-pop">LEVEL UP</span>
-          {focus && <span className="focus-pop">{focus.toUpperCase()} FOCUS</span>}
-          <FittedAvatar
-            avatar={avatar.key}
-            evolved={evolved}
-            focus={focus}
-            items={shopItems}
-            equipped={equipped}
-          />
-          <div className="level-chip">
-            <small>LVL</small>
-            <b>{progress.level}</b>
-          </div>
+        <div className="today-date">
+          <Icon name="calendar" size={17} />
+          <span>{todayLabel}</span>
         </div>
       </section>
-      <section className="stat-grid home-stats">
-        <article>
-          <Icon name="flame" />
-          <div>
-            <b>{progress.weeklyStreak} weeks</b>
-            <span>Current streak</span>
-          </div>
-        </article>
-        <article>
-          <Icon name="bolt" />
-          <div>
-            <b>{progress.totalWorkouts}</b>
-            <span>Total workouts</span>
-          </div>
-        </article>
-        <article>
-          <Icon name="trophy" />
-          <div>
-            <b>
-              {progress.completedDaysThisWeek} / {progress.weeklyGoal}
-            </b>
-            <span>Active days this week</span>
-          </div>
-        </article>
-      </section>
-      <section className="friend-feed">
-        <div className="feed-heading">
-          <div>
-            <span className="eyebrow">YOUR NEXT STEP</span>
-            <h2>Make time for yourself</h2>
-          </div>
-          <button className="secondary" onClick={onProfile}>
-            View calendar
-          </button>
-        </div>
-        {train.upcomingWorkouts.length ? (
-          <div className="feed-scroller">
-            {train.upcomingWorkouts.map((event) => (
-              <article className="activity-card" key={event.id}>
-                <span className="eyebrow">{event.workoutType}</span>
-                <h3>{event.title}</h3>
-                <p>{formatTime(event.startsAt, train.profile.timezone)}</p>
-                <small>
-                  {Math.round((Date.parse(event.endsAt) - Date.parse(event.startsAt)) / 60000)}{' '}
-                  minutes
-                </small>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-feed">
-            A little planning goes a long way. Add your next workout in your calendar.
-          </div>
-        )}
-      </section>
-      {(train.news.length > 0 || train.tutorials.length > 0) && (
-        <section className="friend-feed">
-          <div className="feed-heading">
+
+      <div className="dashboard-grid">
+        <section className="home-card week-card">
+          <div className="section-top">
             <div>
-              <span className="eyebrow">TRAINING NOTES</span>
-              <h2>A little inspiration</h2>
+              <p className="home-eyebrow">ONE WEEK AT A TIME</p>
+              <h2>Your week in motion</h2>
+            </div>
+            <span className="date-range">{formatWeekRange(progress.weekStart, weekEnd)}</span>
+          </div>
+          <div className="week-days">
+            {weekDays.map((date, index) => {
+              const complete = completedDays.has(date)
+              const planned = train.upcomingWorkouts.some((event) => eventOnDay(event, date, zone))
+              return (
+                <button
+                  key={date}
+                  type="button"
+                  className={`day ${date === today ? 'today' : ''} ${complete ? 'complete' : ''}`}
+                  aria-label={`${formatShortDate(date)}, ${complete ? 'workout complete' : planned ? 'workout planned' : 'view day'}`}
+                  onClick={onProfile}
+                >
+                  <span>{WEEKDAY_LABELS[index]}</span>
+                  <strong>{Number(date.slice(8))}</strong>
+                  <span className={`day-marker ${planned && !complete ? 'planned' : ''}`}>
+                    {complete ? (
+                      <Icon name="check" size={14} />
+                    ) : planned ? (
+                      <span />
+                    ) : (
+                      <span className="empty-marker" />
+                    )}
+                  </span>
+                  {date === today && <span className="today-label">TODAY</span>}
+                </button>
+              )
+            })}
+          </div>
+          <div className="weekly-goal">
+            <div className="goal-text">
+              <strong>
+                {progress.completedDaysThisWeek} <span>/ {progress.weeklyGoal} active days</span>
+              </strong>
+              <span>
+                {progress.completedDaysThisWeek >= progress.weeklyGoal
+                  ? 'Weekly goal reached. Look at you go!'
+                  : 'Building a habit, one day at a time.'}
+              </span>
+            </div>
+            <div
+              className="goal-segments"
+              aria-label={`${progress.completedDaysThisWeek} of ${progress.weeklyGoal} active days`}
+            >
+              {Array.from({ length: progress.weeklyGoal }, (_, index) => (
+                <span key={index} className={index < progress.completedDaysThisWeek ? 'filled' : ''} />
+              ))}
             </div>
           </div>
-          <div className="feed-scroller">
-            {[...train.tutorials, ...train.news].map((item) => (
-              <article className="activity-card" key={item.id}>
-                <span className="eyebrow">{item.kind}</span>
-                <h3>{item.title}</h3>
-                <p>{item.summary}</p>
-                {item.body && (
-                  <details>
-                    <summary>Read more</summary>
-                    <p className="content-body">{item.body}</p>
-                  </details>
-                )}
-                {item.sourceUrl?.startsWith('https://') && (
-                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
-                    View source ↗
-                  </a>
-                )}
-              </article>
-            ))}
+          <div className="week-footer">
+            <span>
+              <span className="little-dot" /> A little movement goes a long way.
+            </span>
+            <button className="button primary" type="button" onClick={onWorkout}>
+              <Icon name="plus" size={18} />
+              Log a workout
+            </button>
           </div>
         </section>
-      )}
-      <section className="friend-feed">
-        <div className="feed-heading">
-          <div>
-            <span className="eyebrow">FRIEND ACTIVITY</span>
-            <h2>Your circle is growing</h2>
+
+        <section className="buddy-card">
+          <div className="buddy-top">
+            <span className="home-eyebrow">YOUR TRAINING BUDDY</span>
+            <span className="level-pill">LEVEL {progress.level}</span>
           </div>
-          <span>Coming later</span>
+          <div className={`buddy-body ${feedback} ${focus ? `focus-${focus}` : ''}`}>
+            <div>
+              <h2>
+                You grow.
+                <br />
+                {avatar.name} grows.
+              </h2>
+              <p>
+                {evolved
+                  ? `${avatar.name} evolved. Keep training to master this stronger form.`
+                  : 'A little stronger with every rep.'}
+              </p>
+              <span className="buddy-name">
+                <span /> {avatar.name} · {evolved ? 'Powered up' : 'Rising rookie'}
+              </span>
+            </div>
+            <div className="buddy-illustration">
+              <div className="buddy-orbit" />
+              <span className="xp-pop">+XP</span>
+              <span className="level-pop">LEVEL UP</span>
+              {focus && <span className="focus-pop">{focus.toUpperCase()} FOCUS</span>}
+              <FittedAvatar
+                avatar={avatar.key}
+                evolved={evolved}
+                focus={focus}
+                items={shopItems}
+                equipped={equipped}
+              />
+            </div>
+          </div>
+          <div className="xp-label">
+            <span>Next level, here you come</span>
+            <strong>
+              {progress.xpIntoLevel} / 500 XP
+            </strong>
+          </div>
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-label="Level progress"
+            aria-valuenow={progress.xpIntoLevel}
+            aria-valuemin={0}
+            aria-valuemax={500}
+          >
+            <span style={{ width: `${progress.levelProgressPercent}%` }} />
+          </div>
+        </section>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat">
+          <span className="icon-tile lavender">
+            <Icon name="flame" />
+          </span>
+          <div>
+            <span className="stat-label">Current streak</span>
+            <p>
+              <strong>
+                {progress.dailyStreak} {progress.dailyStreak === 1 ? 'day' : 'days'}
+              </strong>
+              <span>
+                {progress.dailyStreak <= 1
+                  ? 'A fresh start is a great start'
+                  : 'Keep coming back'}
+              </span>
+            </p>
+          </div>
         </div>
-        <div className="empty-feed">
-          Add friends in Social. Shared workout activity is coming in a future update.
+        <div className="stat">
+          <span className="icon-tile aqua">
+            <Icon name="bolt" />
+          </span>
+          <div>
+            <span className="stat-label">Workouts logged</span>
+            <p>
+              <strong>{progress.totalWorkouts}</strong>
+              <span>Every one counts</span>
+            </p>
+          </div>
         </div>
-      </section>
-    </>
+        <div className="stat">
+          <span className="icon-tile sage">
+            <Icon name="clock" />
+          </span>
+          <div>
+            <span className="stat-label">Time for yourself</span>
+            <p>
+              <strong>
+                {progress.totalMinutes}
+                <small> min</small>
+              </strong>
+              <span>Well spent, not just worked out</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="lower-grid">
+        <section className="next-section">
+          <div className="section-heading">
+            <div>
+              <p className="home-eyebrow">MAKE TIME FOR YOU</p>
+              <h2>Your next little step</h2>
+            </div>
+            <button className="text-button" type="button" onClick={onProfile}>
+              View calendar <Icon name="arrow" size={16} />
+            </button>
+          </div>
+          <div className="next-card">
+            <span className="icon-tile lavender">
+              <Icon name="calendar" size={22} />
+            </span>
+            <div>
+              <h3>{nextPlan ? nextPlan.title : 'A little planning. A little momentum.'}</h3>
+              <p>
+                {nextPlan
+                  ? formatPlanWhen(nextPlan, zone)
+                  : 'Give your next workout a place in your week.'}
+              </p>
+              <button className="button secondary" type="button" onClick={() => onSchedule(planDate)}>
+                <Icon name="plus" size={16} />
+                {nextPlan ? 'Plan another workout' : 'Plan a workout'}
+              </button>
+            </div>
+            <span className="next-decoration" aria-hidden="true">
+              <Icon name="leaf" size={78} />
+            </span>
+          </div>
+        </section>
+        <section className="recent-section">
+          <div className="section-heading">
+            <div>
+              <p className="home-eyebrow">THE EFFORT ADDS UP</p>
+              <h2>Recently, you showed up</h2>
+            </div>
+            <span className="tiny-tag">NICE WORK</span>
+          </div>
+          <div className="recent-card">
+            {recent.map((workout) => (
+              <div className="activity-row" key={workout.id}>
+                <span className="activity-icon">
+                  <Icon name={workout.activity === 'strength' ? 'weight' : 'bolt'} size={19} />
+                </span>
+                <div className="activity-detail">
+                  <strong>{workout.title}</strong>
+                  <span>
+                    {workoutKind(workout)} <i /> {workout.durationMinutes} min <i />{' '}
+                    {formatShortDate(workout.localDate)}
+                  </span>
+                </div>
+                <span className="completed-check" aria-label="Completed">
+                  <Icon name="check" size={17} />
+                </span>
+              </div>
+            ))}
+            <p className="activity-encouragement">
+              <Icon name="leaf" size={15} />
+              {recent.length === 0
+                ? 'Your first workout starts a new chapter. Log it when you’re ready.'
+                : recent.length === 1
+                  ? 'The first of many. You’re on your way.'
+                  : 'That’s what progress looks like. Keep going.'}
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <button className="community-strip" type="button" onClick={onSocial}>
+        <span className="community-icon">
+          <Icon name="users" size={21} />
+        </span>
+        <span>
+          <strong>Good company. Better habits.</strong>
+          <span>A little encouragement goes further together. Find your people.</span>
+        </span>
+        <span className="community-link">
+          Meet your circle <Icon name="arrow" size={17} />
+        </span>
+      </button>
+      <p className="page-signoff">Consistency isn’t doing it every day. It’s coming back.</p>
+    </div>
   )
 }
 
@@ -965,6 +1125,53 @@ function formatTime(value: string, zone: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))
+}
+
+const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
+
+function formatShortDate(day: string) {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function formatWeekRange(start: string, end: string) {
+  const startDate = new Date(`${start}T12:00:00Z`)
+  const endDate = new Date(`${end}T12:00:00Z`)
+  const startMonth = startDate.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' })
+  const endMonth = endDate.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' })
+  const startDay = startDate.getUTCDate()
+  const endDay = endDate.getUTCDate()
+  return startMonth === endMonth
+    ? `${startMonth} ${startDay} – ${endDay}`
+    : `${startMonth} ${startDay} – ${endMonth} ${endDay}`
+}
+
+function workoutKind(workout: WorkoutLog) {
+  if (workout.activity === 'strength') return 'Strength'
+  if (workout.activity === 'sports') return 'Sports'
+  if (workout.activity)
+    return workout.activity
+      .split('-')
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join(' ')
+  return 'Workout'
+}
+
+function formatPlanWhen(event: CalendarEvent, zone: string) {
+  const when = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(event.startsAt))
+  const minutes = Math.round((Date.parse(event.endsAt) - Date.parse(event.startsAt)) / 60_000)
+  const kind = event.workoutType
+    ? event.workoutType[0].toUpperCase() + event.workoutType.slice(1)
+    : 'Workout'
+  return `${when} · ${minutes} min · ${kind}`
 }
 
 function MiniCalendar({

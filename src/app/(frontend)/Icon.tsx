@@ -20,8 +20,20 @@ export type IconName =
   | 'weight'
   | 'cardio'
   | 'sport'
+  | 'calendar'
+  | 'clock'
+  | 'arrow'
+  | 'leaf'
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({
+  name,
+  size,
+  className,
+}: {
+  name: IconName
+  size?: number
+  className?: string
+}) {
   const paths: Record<IconName, ReactNode> = {
     home: (
       <>
@@ -97,15 +109,37 @@ export function Icon({ name }: { name: IconName }) {
         <path d="m12 7 4 3-2 5H9l-2-5 5-3ZM12 7V3M16 10l4-1M14 15l2 4M9 15l-1.5 4.5M7 10 4 8" />
       </>
     ),
+    calendar: (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="3" />
+        <path d="M7 3v4m10-4v4M3 11h18m-14 4h2m6 0h2" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    arrow: <path d="M4 12h16m-6-6 6 6-6 6" />,
+    leaf: (
+      <>
+        <path d="M20 3C8 2 2 8 5 15c7 6 16-1 15-12Z" />
+        <path d="M4 21 15 10" />
+      </>
+    ),
   }
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.1"
+      strokeWidth="1.7"
       strokeLinecap="round"
       strokeLinejoin="round"
+      className={className}
       aria-hidden="true"
     >
       {paths[name]}
