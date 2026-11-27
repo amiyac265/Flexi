@@ -15,6 +15,7 @@ try {
   for (const file of readdirSync(join(root, 'supabase/migrations')).filter(f => f.endsWith('.sql')).sort()) {
     if (file === '20261116000000_coin_economy.sql') await db.exec(readFileSync(join(root, 'tests/database/coin-backfill-before.sql'), 'utf8'))
     await db.exec(readFileSync(join(root, 'supabase/migrations', file), 'utf8'))
+    if (file === '20261116000000_coin_economy.sql') await db.exec(readFileSync(join(root, 'tests/database/coin-backfill-after.sql'), 'utf8'))
     if (file === '20261102000000_flexi_core.sql') await db.exec(readFileSync(join(root, 'tests/database/legacy-before.sql'), 'utf8'))
     if (file === '20261114000000_frontend_integration.sql') { await db.exec(readFileSync(join(root, 'tests/database/legacy-after.sql'), 'utf8')); console.log('PASS: migration preserves legacy retries, workout dates, inventory and equipment.') }
     console.log(`PASS: applied ${file}`)

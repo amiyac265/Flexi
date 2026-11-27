@@ -33,11 +33,13 @@ supabase db push --remote --dry-run
 supabase db push --remote
 ```
 
-Review the linked project and dry-run output before pushing. Supply credentials only through the CLI's secure prompts/environment support, not source or chat. A new project applies all six versioned migrations, including `20261120000000_friends.sql`. Existing projects apply only pending migrations. Never edit or reapply an applied migration.
+Review the linked project and dry-run output before pushing. Supply credentials only through the CLI's secure prompts/environment support, not source or chat. A new project applies every versioned migration in order. Existing projects apply only pending migrations. Never edit or reapply an applied migration.
+
+If the friends migration is already applied and the older coin migration is pending, check the catalog first. The coin migration temporarily narrows the slot constraint. Existing rows in slots `top`, `bottom`, or `shoes` need a preservation plan before that migration can run. For an empty catalog, preview with `supabase db push --remote --include-all --dry-run`. Expect the coin economy migration followed by `20261126000000_shop_catalog.sql`. After reviewing the target and files, apply with `supabase db push --remote --include-all`. Verify the six catalog rows and compare the backfilled wallet balances with the coin ledger.
 
 The migrations create the app tables, the Auth signup trigger, private-read policies, and the mutation functions. It does not drop existing tables. If the project already has tables with these names, stop and inspect instead of resetting it. Future changes must be new migration files. See [Supabase's migration workflow](https://supabase.com/docs/guides/local-development/database-migrations).
 
-Optionally open the project's SQL Editor and run `supabase/seed.sql` to add six starter cosmetics and an app-use tutorial. These are sample catalog entries, not news or workout history. You can edit/archive them in Table Editor. No seed has been applied remotely yet.
+Optionally open the project's SQL Editor and run `supabase/seed.sql` to add six starter cosmetics and an app-use tutorial. These are sample catalog entries, not news or workout history. You can edit/archive them in Table Editor. Apply the optional seed after all migrations.
 
 ## 3. Configure this app
 

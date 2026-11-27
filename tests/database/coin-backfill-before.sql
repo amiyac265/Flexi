@@ -9,3 +9,9 @@ do $$ declare r jsonb; begin
   end loop;
 end $$;
 reset role;
+-- All fixture RPCs run in one transaction. Give each entry its historical position
+-- so the milestone and void assertions do not depend on the random UUID tie-breaker.
+update public.workout_logs
+set completed_at = timestamptz '2026-01-01 00:00:00+00'
+  + split_part(request_id, '-', 3)::integer * interval '1 minute'
+where owner = '90000000-0000-4000-8000-000000000001';

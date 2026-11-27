@@ -93,6 +93,7 @@ async function setup(page: Page, onboarded = true) {
   const histories: Record<string, WorkoutLog[]> = { [alice]: [], [bob]: [] }
   const plans: Record<string, CalendarEvent[]> = { [alice]: [], [bob]: [] }
   const outfits: Record<string, Record<string, string>> = { [alice]: {}, [bob]: {} }
+  const balances: Record<string, number> = { [alice]: 220, [bob]: 0 }
   const inventories: Record<string, string[]> = { [alice]: [], [bob]: [] }
   const tokens = { [alice]: token(alice), [bob]: token(bob) }
   let connected = false
@@ -247,6 +248,7 @@ async function setup(page: Page, onboarded = true) {
       }
       return respond(character())
     }
+    if (path === 'wallet') return respond({ balance: balances[id], lifetimeWorkouts: history.length })
     if (path === 'shop')
       return respond({
         ...pageOf(
@@ -269,7 +271,10 @@ async function setup(page: Page, onboarded = true) {
       )
     if (path.startsWith('shop/')) {
       const item = path.split('/')[1]
-      if (!inventories[id].includes(item)) inventories[id].push(item)
+      if (!inventories[id].includes(item)) {
+        balances[id] -= catalog.find((entry) => entry.id === item)!.coinPrice
+        inventories[id].push(item)
+      }
       return respond({ inventory: { id: 'inventory', item, owner: id }, replayed: false })
     }
     if (path === 'workouts' && method === 'GET')
@@ -468,15 +473,16 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
   await expect(page.getByRole('button', { name: /Bao/ })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Shop', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Quiet Grove', exact: true })).toBeVisible() // Third catalog item is on page two.
-  for (const name of ['Moss Tee', 'Cloud Shoes']) {
+  for (const [name, price] of [['Moss Tee', 120], ['Cloud Shoes', 100]] as const) {
     await page
       .locator('.product-card')
       .filter({ has: page.getByRole('heading', { name, exact: true }) })
       .getByRole('button', { name: 'Try on' })
       .click()
-    await page.getByRole('button', { name: 'Claim & equip' }).click()
+    await page.getByRole('button', { name: `Buy & equip for ${price} coins` }).click()
     await expect(page.getByText(`${name} claimed and equipped.`)).toBeVisible()
   }
+  await expect(page.locator('.coin-balance')).toContainText('0 coins')
   expect(Object.keys(app.outfits[alice]).sort()).toEqual(['shoes', 'top'])
   await page.getByRole('button', { name: 'My closet', exact: true }).click()
   await expect(page.locator('.product-card')).toHaveCount(2)
@@ -513,6 +519,17 @@ test('workout retry survives reload, calendar and outfits persist, logout isolat
       Object.keys(sessionStorage).filter((key) => key.startsWith('flexi:')),
     ),
   ).toEqual([])
+})
+
+test('shop previews a priced item when the wallet cannot cover it', async ({ page }) => {
+  await setup(page)
+  await page.goto('/')
+  await login(page, 'bob@example.test')
+  await page.getByRole('button', { name: 'Shop', exact: true }).click()
+  await page.getByRole('button', { name: 'Clothing', exact: true }).click()
+  await page.locator('.product-card').filter({ hasText: 'Moss Tee' }).getByRole('button', { name: 'Try on' }).click()
+  await expect(page.getByRole('button', { name: 'Buy & equip for 120 coins' })).toBeDisabled()
+  await expect(page.getByText('Earn 120 more coins to buy this item.')).toBeVisible()
 })
 
 test('strength logging builds, adds and removes per-set exercises', async ({ page }) => {
@@ -568,7 +585,7 @@ test('cardio logging collects a cardio activity, duration and distance', async (
   await page.getByLabel('Activity').selectOption('swimming')
   await page.getByLabel('Workout title').fill('Pool workout')
   await page.getByLabel('Duration').fill('45')
-  await page.getByLabel('Distance').fill('1500')
+  await page.getByRole('spinbutton', { name: /^Distance\b/ }).fill('1500')
   await page.getByLabel('Distance unit').selectOption('m')
   await page.getByRole('button', { name: 'Save workout', exact: true }).click()
   const request = app.requests.find((item) => item.path === 'workouts' && item.method === 'POST')

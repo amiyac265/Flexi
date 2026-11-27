@@ -3,8 +3,6 @@
 import { useState } from 'react'
 import { Icon, FittedAvatar, type ShopItem, type Equipped } from './FlexiVisuals'
 import './shop.css'
-import { CoinPacksDialog } from './EconomyDialogs'
-import type { useCoinEconomy } from './useCoinEconomy'
 
 export default function ShopTab({
   avatar,
@@ -13,6 +11,8 @@ export default function ShopTab({
   owned,
   equipped,
   level,
+  balance,
+  busy,
   message,
   onPurchase,
   onEquip,
@@ -23,13 +23,18 @@ export default function ShopTab({
   owned: string[]
   equipped: Equipped
   level: number
+  balance: number | null
+  busy: boolean
   message: string
   onPurchase: (item: ShopItem) => void
   onEquip: (item: ShopItem) => void
 }) {
   const [view, setView] = useState<'shop' | 'closet'>('shop')
   const [category, setCategory] = useState<'all' | ShopItem['category']>('all')
-  const [preview, setPreview] = useState<ShopItem | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const preview = items.find((item) => item.id === previewId)
+  const affordable =
+    preview && (preview.coinPrice === 0 || (balance !== null && balance >= preview.coinPrice))
   const visible = items.filter(
     (item) =>
       (view === 'shop' || owned.includes(item.id)) &&
@@ -46,8 +51,8 @@ export default function ShopTab({
         <div className="coin-balance">
           <Icon name="bolt" />
           <div>
-            <b>{level}</b>
-            <span>Current level</span>
+            <b>{balance === null ? 'Balance unavailable' : `${balance} coins`}</b>
+            <span>Level {level}</span>
           </div>
         </div>
       </header>
@@ -70,7 +75,7 @@ export default function ShopTab({
           </p>
           {preview && (
             <div className="tryon-actions">
-              <button className="secondary" onClick={() => setPreview(null)}>
+              <button className="secondary" onClick={() => setPreviewId(null)}>
                 Clear preview
               </button>
               {owned.includes(preview.id) ? (
@@ -78,7 +83,7 @@ export default function ShopTab({
                   className="primary"
                   onClick={() => {
                     onEquip(preview)
-                    setPreview(null)
+                    setPreviewId(null)
                   }}
                 >
                   Equip item
@@ -86,15 +91,30 @@ export default function ShopTab({
               ) : (
                 <button
                   className="primary"
-                  disabled={!preview.unlocked}
+                  disabled={busy || !preview.unlocked || !affordable}
                   onClick={() => onPurchase(preview)}
                 >
-                  {preview.unlocked ? 'Claim & equip' : `Unlocks at level ${preview.minimumLevel}`}
+                  {!preview.unlocked
+                    ? `Unlocks at level ${preview.minimumLevel}`
+                    : preview.coinPrice === 0
+                      ? 'Claim & equip'
+                      : `Buy & equip for ${preview.coinPrice} coins`}
                 </button>
               )}
             </div>
           )}
-          {message && <div className="shop-message">{message}</div>}
+          {preview && preview.unlocked && !preview.owned && !affordable && (
+            <p>
+              {balance === null
+                ? 'Refresh to check your balance.'
+                : `Earn ${preview.coinPrice - balance} more coins to buy this item.`}
+            </p>
+          )}
+          {message && (
+            <div className="shop-message" role="status">
+              {message}
+            </div>
+          )}
         </div>
       </div>
       <div className="shop-view-switch" role="group" aria-label="Shop view">
@@ -139,7 +159,7 @@ export default function ShopTab({
             </div>
             <div className="product-meta">
               <span className="acquisition free">
-                {item.owned ? 'IN YOUR CLOSET' : 'LEVEL REWARD'}
+                {item.owned ? 'IN YOUR CLOSET' : item.coinPrice ? 'COIN SHOP' : 'LEVEL REWARD'}
               </span>
               <h3>{item.name}</h3>
               <p>{item.description}</p>
@@ -148,9 +168,9 @@ export default function ShopTab({
                 Level {item.minimumLevel}
               </small>
               <footer>
-                <b>{item.owned ? 'Owned' : item.unlocked ? 'Ready to claim' : 'Locked'}</b>
+                <b>{item.owned ? 'Owned' : item.coinPrice ? `${item.coinPrice} coins` : 'Free'}</b>
                 <div>
-                  <button onClick={() => setPreview(item)}>Try on</button>
+                  <button onClick={() => setPreviewId(item.id)}>Try on</button>
                   {owned.includes(item.id) && (
                     <button className="equip-quick" onClick={() => onEquip(item)}>
                       Equip

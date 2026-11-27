@@ -299,11 +299,19 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
     })
   const claimItem = (item: ShopItem) =>
     void run(async () => {
-      await api.claimCosmetic(item.id)
-      await api.updateCharacter({ equipped: { [item.slot]: item.id } })
-      setShopMessage(`${item.name} claimed and equipped.`)
-      await refresh()
-    })
+      setShopMessage('')
+      try {
+        await api.claimCosmetic(item.id)
+        try {
+          await api.updateCharacter({ equipped: { [item.slot]: item.id } })
+          setShopMessage(`${item.name} claimed and equipped.`)
+        } catch (error) {
+          setShopMessage(`${item.name} is in your closet. Equipping failed. ${messageFor(error)}`)
+        }
+      } finally {
+        await refresh()
+      }
+    }, setShopMessage)
   const logout = () =>
     void run(async () => {
       await api.logout()
@@ -448,6 +456,8 @@ function SignedInApp({ userId, players }: { userId: string; players: Leaderboard
               owned={owned}
               equipped={equipped}
               level={progress.level}
+              balance={snapshot.balance}
+              busy={busy || loading}
               message={shopMessage}
               onPurchase={claimItem}
               onEquip={equipItem}

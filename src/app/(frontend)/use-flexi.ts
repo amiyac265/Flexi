@@ -8,6 +8,7 @@ import type { CalendarEvent, WorkoutLog } from '@/backend/data'
 export type Snapshot = {
   train: Train
   character: Character
+  balance: number | null
   shop: ShopItem[]
   history: WorkoutLog[]
   archivedItems: number
@@ -35,12 +36,16 @@ export function useFlexi(userId: string) {
     const ticket = ++sequence.current
     setLoading(true)
     try {
-      const [train, character, shop, history, inventory] = await Promise.all([
+      const [train, character, shop, history, inventory, balance] = await Promise.all([
         api.train(),
         api.character(),
         allPages(api.shop),
         allPages(api.workouts),
         allPages(api.inventory),
+        api
+          .wallet()
+          .then((wallet) => wallet.balance)
+          .catch(() => null),
       ])
       if (!alive.current || ticket !== sequence.current || train.profile.id !== userId) return null
       const next = {
@@ -48,6 +53,7 @@ export function useFlexi(userId: string) {
         character,
         shop,
         history,
+        balance,
         archivedItems: inventory.filter((item) => !item.item).length,
       }
       setSnapshot(next)

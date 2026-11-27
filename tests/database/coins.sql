@@ -1,3 +1,12 @@
+do $$ begin
+  assert (select coalesce(array_agg(slug order by slug), '{}'::text[]) from public.cosmetic_items where category='clothing' and coin_price>0)
+    = array['everyday-training-tee', 'off-duty-cap'];
+  assert (select coalesce(array_agg(slug order by slug), '{}'::text[]) from public.cosmetic_items where category='accessories' and coin_price>0)
+    = array['find-your-flow-mat', 'hydration-buddy'];
+  assert (select coalesce(array_agg(slug order by slug), '{}'::text[]) from public.cosmetic_items where category='backgrounds' and coin_price>0)
+    = array['garden-escape', 'golden-hour'];
+end $$;
+
 -- Separate accounts keep wallet invariants independent from the existing security suite.
 reset role;
 insert into auth.users values

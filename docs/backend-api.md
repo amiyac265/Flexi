@@ -169,7 +169,7 @@ Manage `training_content` and `cosmetic_items` through Supabase Dashboard Table 
 
 For content, set `status = published` and a `published_at` date that has arrived. For cosmetics, set `active = true` and a `minimum_level`. Optional `image_url` fields accept HTTPS URLs, including public Supabase Storage URLs managed by your team. User uploads and storage-bucket policies are not part of this MVP. Preset animal avatars already live in `public/avatars`.
 
-News is editorial content, not an automatically fetched live news service. Empty content and shop results are expected until editors add records or apply the optional seed.
+Editors publish news. The coin economy and shop catalog migrations supply six priced items, with two each under Clothing, Accessories, and Backgrounds. The Shop reads the signed-in user’s balance from `GET /api/flexi/wallet` and refreshes it after a claim.
 
 ## Implementation and verification
 

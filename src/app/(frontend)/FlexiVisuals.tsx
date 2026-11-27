@@ -210,6 +210,28 @@ function GarmentLayer({ item }: { item: ShopItem }) {
         <ellipse cx="64" cy="88" rx="12" ry="5" />
       </g>
     )
+  if (item.styleKey === 'off-duty-cap')
+    return (
+      <g fill={item.primaryColor} stroke={item.accentColor} strokeWidth="1.3">
+        <path d="M33 23a16 14 0 0 1 32 0Z" />
+        <path d="M34 22q15-4 31 0l8 3q-14 4-39 0Z" />
+      </g>
+    )
+  if (item.styleKey === 'hydration-buddy')
+    return (
+      <g fill={item.primaryColor} stroke={item.accentColor} strokeWidth="1.2">
+        <rect x="69" y="47" width="10" height="18" rx="3" />
+        <rect x="71" y="44" width="6" height="4" rx="1" fill="#eee9df" />
+      </g>
+    )
+  if (item.styleKey === 'find-your-flow-mat')
+    return (
+      <g fill={item.primaryColor} stroke={item.accentColor} strokeWidth="1.2" transform="rotate(-16 72 55)">
+        <rect x="68" y="42" width="9" height="25" rx="3" />
+        <ellipse cx="72.5" cy="44" rx="4.5" ry="2" />
+        <path d="M68 54h9" />
+      </g>
+    )
   if (item.styleKey === 'training-cape')
     return (
       <path
